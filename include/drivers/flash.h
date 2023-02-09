@@ -87,7 +87,7 @@ bool flash_dma_write_page(int cs, uint16_t page_number, uint8_t *buf) {
 
 	// attempt to claim a channel
 	int dma_chan = dma_claim_unused_channel(true);
-	if ( dma_chan == -1 ) { printf("uh oh"); }
+	// if ( dma_chan == -1 ) { printf("uh oh"); }
 	dma_channel_config cfg = dma_channel_get_default_config(dma_chan);
 	channel_config_set_dreq(&cfg, DREQ_SPI0_TX);
 	channel_config_set_transfer_data_size(&cfg, DMA_SIZE_8);

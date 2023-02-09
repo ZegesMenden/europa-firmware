@@ -1,14 +1,12 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
-#include "hardware/gpio.h"
-#include "drivers/ws2812.pio.h"
-#include "physics.h"
+#include "core.h"
+#include "perif_ctrl.h"
 
 int main(void)
 {  
-    stdio_init_all();
-
-    neopix_init(16);
-    neopix_write(5, 5, 5);
-
+  stdio_init_all();
+  while(!stdio_usb_connected()) {};
+  print_compile_config();
+  perif_init();
 }

@@ -73,12 +73,6 @@ public:
     vec3(T x, T y, T z) { this->x = x, this->y = y, this->z = z; }
 
     /**
-     * @brief Return the string representation of a vec3
-     * @return string representation
-     */
-    operator String() const { return String(x) + "," + String(y) + "," + String(z); }
-
-    /**
      * @brief Adds the right handed vector to the left handed vector
      * @return sum of the two vectors
      */

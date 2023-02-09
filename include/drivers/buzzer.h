@@ -3,7 +3,7 @@
 
 #pragma once
 
-void pwmTone(uint pin, uint freq)
+void buzzer_tone(uint pin, uint freq)
 {
     // get slice number
     uint slicenum = pwm_gpio_to_slice_num(pin);
@@ -33,7 +33,7 @@ void pwmTone(uint pin, uint freq)
 
 };
 
-void pwmNoTone(uint pin) {
+void buzzer_disable(uint pin) {
     uint slicenum = pwm_gpio_to_slice_num(pin);
     pwm_set_enabled(slicenum, false);
     gpio_init(pin);
