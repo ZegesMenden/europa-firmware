@@ -1,8 +1,12 @@
 #pragma once
 
 #include <stdio.h>
-#include "pico/stdlib.h"
+#include <string.h>
+#include <pico/stdlib.h>
+
 #include "physics.h"
+#include "mmath.h"
+#include "drivers/pins.h"
 
 // ============================================================================
 // compile-time settings
