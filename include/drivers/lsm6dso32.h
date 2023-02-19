@@ -269,6 +269,36 @@ public:
 
     }
 
+    void read_accel_and_gyro_2_buf(raw_data_t *accel, raw_data_t *gyro, raw_data_t *accel1, raw_data_t *gyro1) {
+        
+        uint8_t buf[12];
+
+        read_from_device(0x22, buf, 12);
+
+        gyro->data[0] = buf[0] | buf[1]<<8;
+        gyro->data[1] = buf[2] | buf[3]<<8;
+        gyro->data[2] = buf[4] | buf[5]<<8;
+
+        gyro1->data[0] = gyro->data[0];
+        gyro1->data[1] = gyro->data[1];
+        gyro1->data[2] = gyro->data[2];
+
+        accel->data[0] = buf[7]  | buf[6] <<8;
+        accel->data[1] = buf[9]  | buf[8] <<8;
+        accel->data[2] = buf[11] | buf[10]<<8;
+
+        accel1->data[0] = accel->data[0];
+        accel1->data[1] = accel->data[1];
+        accel1->data[2] = accel->data[2];
+
+    }
+
+    bool drdy() { 
+        uint8_t buf;
+        read_from_device(0x1e, &buf, 1);
+        return (buf&3) != 0;
+    }
+
     bool dma_init_read(raw_data_t *gyro, raw_data_t *accel, uint16_t *temp) {
         
         
