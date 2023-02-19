@@ -1,8 +1,10 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 #include "core.h"
-#include "perif_ctrl.h"
-
+#include "drivers/perif_ctrl.h"
+#include "navigation.h"
+#include "datalogging.h"
+#include "pico/mem_ops.h"
 int main(void)
 {  
   stdio_init_all();
