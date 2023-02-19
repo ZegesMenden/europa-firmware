@@ -36,7 +36,7 @@ inline float DBPf(float la1, float lo1, float la2, float lo2)
     float half_dlat = dlat / 2.0;
     float sin_dlat = sinf(half_dlat);
     float sin_dlon = sinf(half_dlon);
-    float a = sin_dlat*sin_dlat + cos(la1) * cos(la2) * sin_dlon*sin_dlon;
+    float a = sin_dlat*sin_dlat + cosf(la1) * cosf(la2) * sin_dlon*sin_dlon;
     float c = 2 * atan2f(sqrtf(a), sqrtf(1-a));
     return EARTH_RADIUS * c;
 }
