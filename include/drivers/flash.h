@@ -3,6 +3,7 @@
 // ================================================
 #pragma once
 #include <hardware/spi.h>
+#include <hardware/spi.h>
 #include <hardware/dma.h>
 #include <hardware/gpio.h>
 

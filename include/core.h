@@ -3,13 +3,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <pico/stdlib.h>
+#include <hardware/timer.h>
 
 #include "physics.h"
 #include "mmath.h"
 #include "drivers/pins.h"
 
 // ============================================================================
-// compile-time settings
+// general settings
 
 // enable pyros
 #define PYRO_FIRE_EN
@@ -20,24 +21,126 @@
 // enable telemetry
 #define TELEMETRY_EN
 
+// simulate flight (SITL)
+// #define SITL
+
+// ============================================================================
+// thresholds for state switches
+
+// launch detect
+
+// acceleration that the rocket must feel to increase the acceleration counter when in launch detect mode
+constexpr static float launch_detect_accel_threshold = 12.f;
+
+// number of acceleration readings over the acceleration threshold required to trigger launch detection
+constexpr static int launch_detect_accel_count = 10;
+
+// burnout detect
+
+// acceleration that the rocket must be below to increase the acceleration counter when in burnout detect mode
+constexpr static float burnout_detect_accel_threshold = 2.f;
+
+// number of acceleration readings under the acceleration threshold required to trigger burnout detection
+constexpr static int burnout_detect_accel_count = 15;
+
+// apogee detect
+
+// velocity that the rocket must be below to detect apogee
+constexpr static float apogee_detect_vel_threshold = -2.f;
+
+// ============================================================================
+// NAV settings
+
+// process IMU data at 100Hz (no fifo)
+#define NAV_SLOW_UPDATE
+
+
+// number of samples to take to determine gyroscope bias
+constexpr static uint16_t gyro_bias_count = 400;
+
+// number of samples to take to determine altitude offset
+constexpr static uint16_t baro_bias_count = 100;
+
+
 // ============================================================================
 // global flags and variables
 
+namespace flags {
+    
+    namespace state {
+    
+        volatile bool accel_over_ld_threshold = false;
+
+        volatile bool accel_under_burnout_threshold = false;
+        volatile bool time_over_burnout_threshold = false;
+
+        volatile bool velocity_over_apogee_threshold = false;
+
+    }
+
+    namespace boot {
+
+        volatile bool boot_fail = false;
+
+    }
+
+    namespace nav {
+        
+        volatile bool gyro_debiased = false;
+        volatile bool baro_debiased = false;
+
+        volatile bool gps_lock = false;
+        volatile bool gps_initial_position_lock = false;
+
+        volatile bool kalman_x_converged = false;
+        volatile bool kalman_y_converged = false;
+        volatile bool kalman_z_converged = false;
+
+    }
+
+}
+
+// ============================================================================
 // vehicle state declaration and getters/setters
 
 enum system_state_t {
+    // initialization of all systems
     state_boot,
+
+    // 1st idle state
     state_idle,
+
+    // filter convergence, sensor debiasing, gps initialization
     state_nav_init,
+
+    // 2nd idle state
     state_launch_idle,
+
+    // waiting for launch
     state_launch_detect,
+
+    // ascent under thrust and guidance
     state_powered_ascent,
+
+    // coasting to apogee
     state_ascent_coast,
+
+    // costing to landing burn
     state_descent_coast,
+
+    // time between motor ignition and peak thrust
     state_landing_start,
+
+    // powered descent up until 0.25s before burnout
     state_landing_guidance,
+
+    // final 0.25s of landing burn, nulling angular rates and preparing to land
     state_landing_terminal,
+
+    // on the ground post-flight
     state_landed,
+
+    // flight has been aborted
     state_abort
 };
 
@@ -135,30 +238,82 @@ _port_t qwiic_port3 = { 1,                              // pin0
 // ============================================================================
 // functions that dont really belong anywhere else
 
+template <class T>
+auto clamp(const T& x, const T& min, const T& max) { return x < min ? min : (x > max ? max : x); }
+
 void print_compile_config() {
 
-    printf("============================================================================\n");
+    printf("============================================================================\n\n");
     printf("COMPILE CONFIGS\n\n");
-
+    
+    sleep_ms(100);
     #ifdef PYRO_FIRE_EN
         printf("PYRO_FIRE_EN is ENABLED\n");
     #else
         printf("PYRO_FIRE_EN is DISABLED\n");
     #endif
 
+    sleep_ms(100);
     #ifdef DATALOG_EN
         printf("DATALOG_EN is ENABLED\n");
     #else
         printf("DATALOG_EN is DISABLED\n");
     #endif
     
+    sleep_ms(100);
     #ifdef TELEMETRY_EN
         printf("TELEMETRY_EN is ENABLED\n");
     #else
         printf("TELEMETRY_EN is DISABLED\n");
     #endif
 
+    sleep_ms(100);
+    #ifdef SITL
+        printf("SITL is ENABLED\n");
+    #else
+        printf("SITL is DISABLED\n");
+    #endif
+
+    sleep_ms(100);
+    #ifdef NAV_SLOW_UPDATE
+        printf("NAV_UPDATE is set to SLOW (100Hz)\n");
+    #else
+        printf("NAV_UPDATE is set to FAST (400Hz)\n");
+    #endif
+
+    #define vname(x) #x
+
+    // printf("\n%s is set to %f\n%s is set to %f\n\n%s is set to %f\n%s is set to %f\n\n%s is set to %f\n\n",
+    //     vname(launch_detect_accel_threshold), launch_detect_accel_threshold,
+    //     vname(launch_detect_accel_count), launch_detect_accel_count,
+    //     vname(burnout_detect_accel_threshold), burnout_detect_accel_threshold,
+    //     vname(burnout_detect_accel_count), burnout_detect_accel_count,
+    //     vname(apogee_detect_vel_threshold), apogee_detect_vel_threshold);
+
+    sleep_ms(100);
     printf("\n");
+    sleep_ms(100);
+    printf("%s is set to %f\n", vname(launch_detect_accel_threshold), launch_detect_accel_threshold);
+    sleep_ms(100);
+    printf("%s is set to %i\n", vname(launch_detect_accel_count), launch_detect_accel_count);
+    sleep_ms(100);
+    printf("\n");
+    sleep_ms(100);
+    printf("%s is set to %f\n", vname(burnout_detect_accel_threshold), burnout_detect_accel_threshold);
+    sleep_ms(100);
+    printf("%s is set to %i\n", vname(burnout_detect_accel_count), burnout_detect_accel_count);
+    sleep_ms(100);
+    printf("\n");
+    sleep_ms(100);
+    printf("%s is set to %f\n", vname(apogee_detect_vel_threshold), apogee_detect_vel_threshold);
+    
+    sleep_ms(100);
+    printf("\n");
+
+    sleep_ms(100);
     printf("============================================================================\n");
     
 }
+
+#define boot_warning(message) printf("[WARNING] from function %s:\n%s\n", __FUNCTION__, message)
+#define boot_panic(message) printf("[ERROR] from function %s:\n%s\n", __FUNCTION__, message); flags::boot::boot_fail = true;

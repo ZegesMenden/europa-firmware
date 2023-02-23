@@ -1,7 +1,8 @@
-#include "hardware/i2c.h"
 #include "hardware/spi.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
+
+#pragma once
 
 enum lsm6dso32_fifo_regs {
     FIFO_CTRL1 = 0x07,
@@ -60,8 +61,7 @@ enum lsm6dso32_fifo_tag {
 };
 
 struct fifo_data_t {
-    uint8_t tag;
-    uint8_t data[6];
+    uint8_t data[7];
 };
 
 struct raw_data_t {
@@ -183,35 +183,47 @@ public:
     /// @param odr odr value
     /// @return true if write was successful 
     bool set_accel_settings(uint8_t odr, uint8_t range) {
-        write_to_device(0x10, ((odr & 0x0f) << 4) | ((range & 0x03) << 2));
+        int err = write_to_device(0x10, ((odr & 0x0f) << 4) | ((range & 0x03) << 2));
+        if (!err) { return 0; }
         uint8_t sts = 0;
-        read_from_device(0x10, &sts, 1);
-        return sts == (((odr & 0x0f) << 4) | ((range & 0x03) << 2));
+        err = read_from_device(0x10, &sts, 1);
+        return err&(sts == (((odr & 0x0f) << 4) | ((range & 0x03) << 2)));
     }
 
     /// @brief sets gyroscope ODR and range
     /// @param odr odr value
     /// @return true if write was successful 
     bool set_gyro_settings(uint8_t odr, uint8_t range) {
-        return write_to_device(0x11, ((odr&0x0f)<<4) | ((range & 0x03) << 2) );
+        int err = write_to_device(0x11, ((odr&0x0f)<<4) | ((range & 0x03) << 2) );
+        if (!err) { return 0; }
         uint8_t sts = 0;
-        read_from_device(0x11, &sts, 1);
-        return sts == (((odr&0x0f)<<4) | ((range & 0x03) << 2));
+        err = read_from_device(0x11, &sts, 1);
+        return err&(sts == (((odr&0x0f)<<4) | ((range & 0x03) << 2)));
     }
 
     bool set_gyro_lpf(uint8_t lpf) {
-        return write_to_device(0x15, (lpf&0b00000111) );
+        int err = write_to_device(0x15, (lpf&0b00000111) );
+        if (!err) { return 0; }
         uint8_t sts = 0;
-        read_from_device(0x15, &sts, 1);
-        return sts == (lpf&0b00000111);
+        err = read_from_device(0x15, &sts, 1);
+        return err&(sts == (lpf&0b00000111));
         
     }
 
     bool set_fifo_batch_rate(uint8_t accel_batch_rate, uint8_t gyro_batch_rate) {
-        return write_to_device(FIFO_CTRL3, ((gyro_batch_rate&0x0f)<<4) | (accel_batch_rate&0x0f));
+        int err = write_to_device(FIFO_CTRL3, ((gyro_batch_rate&0x0f)<<4) | (accel_batch_rate&0x0f));
+        if (!err) { return 0; }
         uint8_t sts = 0;
-        read_from_device(FIFO_CTRL3, &sts, 1);
-        return sts == (((gyro_batch_rate&0x0f)<<4) | (accel_batch_rate&0x0f));
+        err = read_from_device(FIFO_CTRL3, &sts, 1);
+        return err&(sts == (((gyro_batch_rate&0x0f)<<4) | (accel_batch_rate&0x0f)));
+    }
+
+    bool set_fifo_page_4(uint8_t timestamp_batch_rate, uint8_t temp_batch_rate, uint8_t fifo_mode) {
+        int err = write_to_device(FIFO_CTRL4, ((timestamp_batch_rate&0x03)<<6) | ((temp_batch_rate&0x03)<<4) | (fifo_mode&0x07));
+        if (!err) { return 0; }
+        uint8_t sts = 0;
+        err = read_from_device(FIFO_CTRL4, &sts, 1);
+        return err&(sts == (((timestamp_batch_rate&0x03)<<6) | ((temp_batch_rate&0x03)<<4) | (fifo_mode&0x07)));
     }
 
     bool set_fifo_watermark(uint8_t wtm) {
@@ -221,17 +233,22 @@ public:
         return sts == wtm;
     }
 
-    bool read_fifo_data(fifo_data_t *buf, int nframes) {
-
+    int n_fifo_frames() {
         uint8_t rx[2];
         read_from_device(0x3a, rx, 2);
-        uint16_t n_undread_fifo_frames =  ((rx[1]&3) << 8) | rx[0];
-        if ( n_undread_fifo_frames > nframes ) {
-            for ( int i = 0; i < nframes; i++ ) {
-                read_from_device(0x78, (uint8_t*)buf, 7);
-            }
-        }
+        uint16_t n_undread_fifo_frames = (uint16_t)(((uint16_t)rx[1]&3) << 8) | rx[0];
+        return n_undread_fifo_frames;
+    }
 
+    bool read_fifo_data(fifo_data_t *buf, int nframes) {
+        uint8_t rx[2];
+        read_from_device(0x3a, rx, 2);
+        uint16_t n_undread_fifo_frames =  (uint16_t)(((uint16_t)rx[1]&3) << 8) | rx[0];
+        if ( n_undread_fifo_frames >= nframes ) {
+            for ( int i = 0; i < nframes; i++ ) {
+                read_from_device(0x78, buf[i].data, 7);
+            }
+        } else { return 0; }
         return 1;
     }
 
@@ -253,19 +270,19 @@ public:
         ret->data[2] = buf[4] | buf[5]<<8;
     }
 
-    void read_accel_and_gyro(raw_data_t *accel, raw_data_t *gyro) {
+    void read_accel_and_gyro(int16_t *accel_x, int16_t *accel_y, int16_t *accel_z, int16_t *gyro_x, int16_t *gyro_y, int16_t *gyro_z) {
         
         uint8_t buf[12];
 
         read_from_device(0x22, buf, 12);
 
-        gyro->data[0] = buf[0] | buf[1]<<8;
-        gyro->data[1] = buf[2] | buf[3]<<8;
-        gyro->data[2] = buf[4] | buf[5]<<8;
+        *gyro_x = buf[0] | buf[1]<<8;
+        *gyro_y = buf[2] | buf[3]<<8;
+        *gyro_z = buf[4] | buf[5]<<8;
 
-        accel->data[0] = buf[7]  | buf[6] <<8;
-        accel->data[1] = buf[9]  | buf[8] <<8;
-        accel->data[2] = buf[11] | buf[10]<<8;
+        *accel_x = buf[7]  | buf[6] <<8;
+        *accel_y = buf[9]  | buf[8] <<8;
+        *accel_z = buf[11] | buf[10]<<8;
 
     }
 

@@ -72,6 +72,9 @@ public:
      */
     vec3(T x, T y, T z) { this->x = x, this->y = y, this->z = z; }
 
+    template<class _t>
+    operator vec3<_t>() const { return vec3<_t>( (_t)this->x, (_t)this->y, (_t)this->z ); }
+
     /**
      * @brief Adds the right handed vector to the left handed vector
      * @return sum of the two vectors

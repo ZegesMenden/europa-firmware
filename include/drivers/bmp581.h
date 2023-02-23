@@ -3,6 +3,8 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 
+#pragma once
+
 class bmp581 {
 
 private:
@@ -126,6 +128,12 @@ public:
         read_from_device(0x38, &osr_is_valid, 1);
 
         return ( sts == (((osr_pres & 7) << 3) | (osr_temp&7) | 0x40) ) & ( (osr_is_valid&0x80) == 0x80 );
+    }
+
+    bool data_ready() {
+        uint8_t buf;
+        read_from_device(0x7, &buf, 1);
+        return buf&1;
     }
 
     void read_pres_data(uint32_t *ret) {

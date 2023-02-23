@@ -1,6 +1,8 @@
 #include "hardware/spi.h"
 #include "hardware/gpio.h"
 
+#pragma once
+
 class lis2mdl {
 
 private:

@@ -1,6 +1,7 @@
 #include "core.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+
 #include "hardware/spi.h"
 #include "hardware/uart.h"
 #include "hardware/i2c.h"
@@ -39,7 +40,7 @@ void perif_init() {
     adc_gpio_init(pin_adc_switch);
 
     // SPI cs pins
-    #define gpio_init_with_pullup(x) gpio_init(x); gpio_set_dir(x, 1); gpio_pull_up(x)
+    #define gpio_init_with_pullup(x) gpio_init(x); gpio_set_dir(x, 1); gpio_put(x, 1)
 
     gpio_init_with_pullup(pin_cs_baro);
     gpio_init_with_pullup(pin_cs_imu);
@@ -48,7 +49,16 @@ void perif_init() {
     gpio_init_with_pullup(pin_cs_extra);
     
     // communication peripherals
-    spi_init(spi0, 1000000);
+
+    gpio_init(pin_spi0_clk);
+    gpio_init(pin_spi0_sdi);
+    gpio_init(pin_spi0_sdo);
+
+    gpio_set_function(pin_spi0_clk, GPIO_FUNC_SPI);
+    gpio_set_function(pin_spi0_sdi, GPIO_FUNC_SPI);
+    gpio_set_function(pin_spi0_sdo, GPIO_FUNC_SPI);
+    
+    spi_init(spi0, 8000000);
 
     gpio_set_function(qwiic_port0.pin0, qwiic_port0.gpio_func);
     gpio_set_function(qwiic_port0.pin1, qwiic_port0.gpio_func);
