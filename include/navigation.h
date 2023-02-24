@@ -234,7 +234,7 @@ namespace nav {
 
 	// initialize sensors and configure data frequencies / sensitivity
 	
-	bool init_nav() {
+	bool init() {
 
 		printf("============================================================================\nNAV init:\n\nInitializing IMU\n");
 		
@@ -270,7 +270,7 @@ namespace nav {
 		return 1;
 	};
 
-	void update_nav() {
+	void update() {
 
 		// ============================================================================
 		// barometer
