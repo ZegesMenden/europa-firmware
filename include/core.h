@@ -61,6 +61,16 @@ constexpr static uint16_t gyro_bias_count = 400;
 // number of samples to take to determine altitude offset
 constexpr static uint16_t baro_bias_count = 100;
 
+// ============================================================================
+// pyro settings
+
+uint32_t pyro_1_fire_dur_us = 0;
+uint32_t pyro_2_fire_dur_us = 0;
+uint32_t pyro_3_fire_dur_us = 0;
+
+constexpr static bool pyro_1_en = false;
+constexpr static bool pyro_2_en = false;
+constexpr static bool pyro_3_en = false;
 
 // ============================================================================
 // global flags and variables
@@ -246,35 +256,30 @@ void print_compile_config() {
     printf("============================================================================\n\n");
     printf("COMPILE CONFIGS\n\n");
     
-    sleep_ms(100);
     #ifdef PYRO_FIRE_EN
         printf("PYRO_FIRE_EN is ENABLED\n");
     #else
         printf("PYRO_FIRE_EN is DISABLED\n");
     #endif
 
-    sleep_ms(100);
     #ifdef DATALOG_EN
         printf("DATALOG_EN is ENABLED\n");
     #else
         printf("DATALOG_EN is DISABLED\n");
     #endif
     
-    sleep_ms(100);
     #ifdef TELEMETRY_EN
         printf("TELEMETRY_EN is ENABLED\n");
     #else
         printf("TELEMETRY_EN is DISABLED\n");
     #endif
 
-    sleep_ms(100);
     #ifdef SITL
         printf("SITL is ENABLED\n");
     #else
         printf("SITL is DISABLED\n");
     #endif
 
-    sleep_ms(100);
     #ifdef NAV_SLOW_UPDATE
         printf("NAV_UPDATE is set to SLOW (100Hz)\n");
     #else
@@ -282,35 +287,19 @@ void print_compile_config() {
     #endif
 
     #define vname(x) #x
-
-    // printf("\n%s is set to %f\n%s is set to %f\n\n%s is set to %f\n%s is set to %f\n\n%s is set to %f\n\n",
-    //     vname(launch_detect_accel_threshold), launch_detect_accel_threshold,
-    //     vname(launch_detect_accel_count), launch_detect_accel_count,
-    //     vname(burnout_detect_accel_threshold), burnout_detect_accel_threshold,
-    //     vname(burnout_detect_accel_count), burnout_detect_accel_count,
-    //     vname(apogee_detect_vel_threshold), apogee_detect_vel_threshold);
-
-    sleep_ms(100);
     printf("\n");
-    sleep_ms(100);
+
     printf("%s is set to %f\n", vname(launch_detect_accel_threshold), launch_detect_accel_threshold);
-    sleep_ms(100);
     printf("%s is set to %i\n", vname(launch_detect_accel_count), launch_detect_accel_count);
-    sleep_ms(100);
-    printf("\n");
-    sleep_ms(100);
-    printf("%s is set to %f\n", vname(burnout_detect_accel_threshold), burnout_detect_accel_threshold);
-    sleep_ms(100);
-    printf("%s is set to %i\n", vname(burnout_detect_accel_count), burnout_detect_accel_count);
-    sleep_ms(100);
-    printf("\n");
-    sleep_ms(100);
-    printf("%s is set to %f\n", vname(apogee_detect_vel_threshold), apogee_detect_vel_threshold);
-    
-    sleep_ms(100);
     printf("\n");
 
-    sleep_ms(100);
+    printf("%s is set to %f\n", vname(burnout_detect_accel_threshold), burnout_detect_accel_threshold);
+    printf("%s is set to %i\n", vname(burnout_detect_accel_count), burnout_detect_accel_count);
+    printf("\n");
+
+    printf("%s is set to %f\n", vname(apogee_detect_vel_threshold), apogee_detect_vel_threshold);
+    printf("\n");
+
     printf("============================================================================\n");
     
 }
