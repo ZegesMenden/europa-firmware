@@ -9,48 +9,6 @@
 
 namespace nav {
 
-	vec3<float> rotaitonal_velocity;
-	quat<float> rotation;
-	
-	vec3<float> acceleration_l;
-	vec3<float> acceleration_i;
-	vec3<float> velocity;
-	vec3<float> position;
-
-
-	namespace timing {
-	
-		uint64_t last_nav_update_us = 0;
-		
-		uint16_t gyro_bias_count = 0;
-		uint16_t baro_bias_count = 0;
-		
-	}
-
-	namespace raw {
-		
-		// 64 frames for now, probably wont need more
-		fifo_data_t fifo_frame_buf[64];
-
-		vec3<int16_t> fifo_gyro[64];
-		uint8_t fifo_gyro_pos = 0;
-		
-		vec3<int16_t> fifo_accel[64];
-		uint8_t fifo_accel_pos = 0;
-
-		vec3<int32_t> gyro_bias;
-
-		vec3<int16_t> gyro;
-		vec3<int16_t> accel;
-		
-		float pressure;
-		float alt;
-		float temp;
-
-		uint32_t process_time = 0;
-		uint32_t read_time = 0;
-	}
-
 	class kalman_1dof {
 
 		matrix<float, 3, 3> Hk_x    = { 1.0f, 0.0f, 0.0f,
@@ -123,11 +81,11 @@ namespace nav {
 			BUk(0, 0) = accel * dt_dt_2;
 			BUk(0, 1) = accel * dt;
 
-			Xk = (Fk*Xk)+BUk;
-			Pk = Fk*Pk*~Fk + Qk;
-
 			// Xk = (Fk*Xk)+BUk;
-			// Pk = Fk*Pk*Fk + Qk;
+			// Pk = Fk*Pk*~Fk + Qk;
+
+			Xk = (Fk*Xk)+BUk;
+			Pk = Fk*Pk*Fk + Qk;
 		};
 
 		void update_position(float pos) {
@@ -220,6 +178,52 @@ namespace nav {
 	
 	};
 
+	vec3<float> rotaitonal_velocity;
+	quat<float> rotation;
+	
+	vec3<float> acceleration_l;
+	vec3<float> acceleration_i;
+	vec3<float> acceleration_b;
+	vec3<float> velocity;
+	vec3<float> position;
+
+	vec3<float> covariance_position;
+	vec3<float> covariance_velocity;
+	vec3<float> covariance_accelleration;
+
+	namespace timing {
+	
+		uint64_t last_nav_update_us = 0;
+		
+		uint16_t gyro_bias_count = 0;
+		uint16_t baro_bias_count = 0;
+		
+	}
+
+	namespace raw {
+		
+		// 64 frames for now, probably wont need more
+		fifo_data_t fifo_frame_buf[64];
+
+		vec3<int16_t> fifo_gyro[64];
+		uint8_t fifo_gyro_pos = 0;
+		
+		vec3<int16_t> fifo_accel[64];
+		uint8_t fifo_accel_pos = 0;
+
+		vec3<int32_t> gyro_bias;
+
+		vec3<int16_t> gyro;
+		vec3<int16_t> accel;
+		
+		float pressure;
+		float alt;
+		float temp;
+
+		uint32_t process_time = 0;
+		uint32_t read_time = 0;
+	}
+
 	kalman_1dof kalman_x;
 	kalman_1dof kalman_y;
 	kalman_1dof kalman_z;
@@ -233,51 +237,34 @@ namespace nav {
 	bool init_nav() {
 
 		printf("============================================================================\nNAV init:\n\nInitializing IMU\n");
-		sleep_ms(100);
 		
 		if ( !imu.init() ) { boot_panic("IMU failed to initialize"); return 0; }
-		sleep_ms(100);
 		printf("Done\n\n");
 
-		sleep_ms(100);
 		printf("Configuring accel ODR/OSR\n");
-		sleep_ms(100);
 		if ( !imu.set_accel_settings(0b0100, 1) ) { boot_panic("Failed to configure IMU"); return 0; }
-		sleep_ms(100);
 		printf("Done\n\n");
 
-		sleep_ms(100);
 		printf("Configuring gyro ODR/OSR\n");
-		sleep_ms(100);
 		if ( !imu.set_gyro_settings(0b0110, 0b11) ) { boot_panic("Failed to configure IMU"); return 0; }
-		sleep_ms(100);
 		printf("Done\n\n");
 
-		sleep_ms(100);
 		printf("Configuring IMU FIFO\n");
-		sleep_ms(100);
 		if ( !imu.set_fifo_batch_rate(0b0110, 0b0110) ) { boot_panic("Failed to configure IMU"); return 0; }
 		if ( !imu.set_fifo_page_4(0, 0, 0b110) ) { boot_panic("Failed to configure IMU"); return 0; }
-		sleep_ms(100);
 		printf("Done\n\n");
 
-		// sleep_ms(100);
-		// printf("Initializing Barometer\n");
-		// sleep_ms(100);
-		// if ( !baro.init() ) { boot_panic("Barometer failed to initialize"); return 0; }
-		// sleep_ms(100);
-		// printf("Done\n\n");
-
-		// sleep_ms(100);
-		// printf("Configuring barometer\n");
-		// sleep_ms(100);
-		// if ( !baro.set_baro_odr(0) ) { boot_panic("Failed to configure Barometer"); return 0; }
-		// sleep_ms(100);
-		// if ( !baro.set_osr(0b100, 0) ) { boot_panic("Failed to configure Barometer"); return 0; }
-		// sleep_ms(100);
-		// printf("Done\n\n");	
 		
-		sleep_ms(100);
+		printf("Initializing Barometer\n");
+		if ( !baro.init() ) { boot_panic("Barometer failed to initialize"); return 0; }
+		printf("Done\n\n");
+
+		
+		printf("Configuring barometer\n");
+		if ( !baro.set_baro_odr(0) ) { boot_panic("Failed to configure Barometer"); return 0; }
+		if ( !baro.set_osr(0b100, 0) ) { boot_panic("Failed to configure Barometer"); return 0; }
+		printf("Done\n\n");	
+		
 		printf("============================================================================\n");
 
 		return 1;
@@ -314,7 +301,7 @@ namespace nav {
 
 				// gyroscope data
 				case(1): {
-					if ( raw::fifo_gyro_pos > 64 ) { printf("aaaaaaaaaaaaaaa\n"); break; }
+					if ( raw::fifo_gyro_pos > 64 ) { break; }
 					raw::fifo_gyro[raw::fifo_gyro_pos++] = vec3<int16_t>( (raw::fifo_frame_buf[i].data[1]) | (raw::fifo_frame_buf[i].data[2]<<8), 
 																		 -(raw::fifo_frame_buf[i].data[3]) | (raw::fifo_frame_buf[i].data[4]<<8),
 																		  (raw::fifo_frame_buf[i].data[5]) | (raw::fifo_frame_buf[i].data[6]<<8));
@@ -345,8 +332,6 @@ namespace nav {
 		// convert raw values to real numbers
 		// acceleration_l = (vec3<float>)raw::accel * 0.0009765625f;
 		// rotaitonal_velocity = (vec3<float>)raw::gyro * 0.00106526443f;
-		
-		
 
 		uint32_t process_t_start = time_us_32();
 
@@ -400,16 +385,36 @@ namespace nav {
 
 		for ( int i = 0; i < raw::fifo_accel_pos; i++ ) {
 
+			constexpr float accel_read_dt = 1.f/104.f;
+
 			// kalman filter stuff probably
 			raw::accel = raw::fifo_accel[i];
 			acceleration_l = (vec3<float>)raw::accel * 0.009765625f;
+			acceleration_i = rotation.rotateVec(acceleration_l);
+
+			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle ) {
+
+				kalman_x.predict(acceleration_i.x, accel_read_dt);
+				kalman_y.predict(acceleration_i.y, accel_read_dt);
+				kalman_z.predict(acceleration_i.z, accel_read_dt);
+
+				kalman_x.get_states(position.x, velocity.x, acceleration_b.x);
+				kalman_y.get_states(position.y, velocity.y, acceleration_b.y);
+				kalman_z.get_states(position.z, velocity.z, acceleration_b.z);
+				
+				kalman_x.get_covariances(covariance_position.x, covariance_velocity.x, covariance_accelleration.x);
+				kalman_y.get_covariances(covariance_position.y, covariance_velocity.y, covariance_accelleration.y);
+				kalman_z.get_covariances(covariance_position.z, covariance_velocity.z, covariance_accelleration.z);
+
+			}
 
 			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {
-				vec3<float> gravity = rotation.rotateVec(acceleration_l);
-				float angle = acosf(clamp(gravity.dot(vec3<float>(1.0, 0.0, 0.0)), -1.0f, 1.0f));
-				vec3<float> axis = gravity.cross(vec3<float>(1.0, 0.0, 0.0));
+
+				float angle = acosf(clamp(acceleration_i.dot(vec3<float>(1.0, 0.0, 0.0)), -1.0f, 1.0f));
+				vec3<float> axis = acceleration_i.cross(vec3<float>(1.0, 0.0, 0.0));
 				rotation = quat<float>().from_axis_angle(0.0001f * angle, axis) * rotation;
 				rotation = rotation.normalize();
+
 			}
 
 		}
