@@ -159,6 +159,8 @@ namespace datalog {
 
         // erase chip?
 
+        return 1;
+
     }
 
     void update() {
