@@ -18,7 +18,7 @@ scheduler<3> scheduler_core0;
 int main(void)
 {  
   stdio_init_all();
-  perif_init();
+  perif::init();
 
   while(!stdio_usb_connected()) {};
   sleep_ms(1000);
