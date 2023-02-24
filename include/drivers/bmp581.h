@@ -18,7 +18,7 @@ private:
     /// @return 1 if correct number of bytes were written, 0 otherwise
     int write_to_device(uint8_t addr, uint8_t data) {
         // bit 7 must be 0 because write?
-        uint8_t buf[2] = {addr & (uint8_t)0x7f, data};
+        uint8_t buf[2] = {uint8_t(addr & 0x7f), data};
 
         gpio_put(cs, 1);
         gpio_put(cs, 0);
