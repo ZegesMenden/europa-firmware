@@ -1,8 +1,7 @@
 #include "core.h"
+#include "drivers/flash.h"
 
 #ifdef DATALOG_EN
-
-#include "drivers/flash.h"
 
 namespace datalog {
 
@@ -13,12 +12,14 @@ namespace datalog {
         struct points {
 
             system_state_t state;
-            uint32_t time;
+            uint64_t time;
             uint8_t flag_gpio;
             uint8_t flag_state;
             
             vec3<float> position;
             vec3<float> velocity;
+            vec3<float> accel_bias;
+
             quat<float> rotation;
             
             uint16_t accel_x;
@@ -54,6 +55,7 @@ namespace datalog {
 
     typedef union log_ptrs_t {
         struct points {
+
             system_state_t* state;
             uint32_t* time;
             uint8_t* flag_gpio;
@@ -62,6 +64,7 @@ namespace datalog {
             vec3<float>* position;
             vec3<float>* velocity;
             quat<float>* rotation;
+            vec3<float>* accel_bias;
             
             uint16_t* accel_x;
             uint16_t* accel_y;
@@ -86,9 +89,10 @@ namespace datalog {
             uint32_t* gps_accuracy_v;
             uint16_t* gps_pdop;
             uint8_t* gps_n_sats;
+
         } points;
 
-        void *raw[25] = {NULL};
+        void *raw[26] = {NULL};
 
         static_assert(sizeof(points) == sizeof(raw));
     } log_ptrs_t;
@@ -97,6 +101,7 @@ namespace datalog {
     uint8_t flash_errors = 0;
     log_ptrs_t ptrs;
     log_t data;
+    uint8_t log_idx = 0;
 
     bool valid_pointers() {
         for ( int i = 0; i < sizeof(ptrs.raw); i++ ) { if ( ptrs.raw[i] == NULL ) { return 0; } }
@@ -113,6 +118,7 @@ namespace datalog {
         data.points.position       = *ptrs.points.position;
         data.points.velocity       = *ptrs.points.velocity;
         data.points.rotation       = *ptrs.points.rotation;
+        data.points.accel_bias     = *ptrs.points.accel_bias;
 
         data.points.accel_x        = *ptrs.points.accel_x;
         data.points.accel_y        = *ptrs.points.accel_y;
@@ -143,6 +149,80 @@ namespace datalog {
     }
 
     uint8_t *get_flash_tx_buf() { return data.raw; }
+
+    bool init() {
+
+        uint8_t a, b, c;
+        get_jdec(pin_cs_flash, &a, &b, &c);
+
+        if ( a == b == c == 0 ) { return 0; }
+
+        // erase chip?
+
+    }
+
+    void update() {
+
+        switch(get_vehicle_state()) {
+            case(state_boot): { 
+                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_idle): { 
+                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_nav_init): { 
+                if ( ++log_idx >= 2 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_launch_idle): { 
+                if ( ++log_idx >= 5 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_launch_detect): { 
+                if ( ++log_idx >= 2 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_powered_ascent): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_ascent_coast): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_descent_coast): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_landing_start): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_landing_guidance): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_landing_terminal): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_landed): { 
+                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            case(state_abort): { 
+                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
+                break;
+            }
+            default: { 
+                
+                break;
+            }
+        }
+
+    }
 
 }
 
