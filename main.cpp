@@ -7,6 +7,13 @@
 #include "datalogging.h"
 #include "navigation.h"
 #include "hardware/gpio.h"
+#include "task.h"
+
+task_t task_nav_update = { (callback_t)nav::update_nav, 10000, 0 };
+task_t task_gpio_update = { (callback_t)NULL, 10000, 0 };
+task_t task_datalog = { (callback_t)NULL, 10000, 0 };
+
+scheduler<3> scheduler_core0;
 
 int main(void)
 {  
@@ -15,11 +22,8 @@ int main(void)
 
   while(!stdio_usb_connected()) {};
   sleep_ms(1000);
-  // for (int i = 0; i < 50; i++ ) { printf("%i\n", i); }
   print_compile_config();
-  // for (int i = 0; i < 50; i++ ) { printf("%i\n", i); }
   nav::init_nav();
-  // for (int i = 0; i < 50; i++ ) { printf("%i\n", i); }
   neopix_write(5, 5, 5);
   vehicle_state = state_nav_init;
 
