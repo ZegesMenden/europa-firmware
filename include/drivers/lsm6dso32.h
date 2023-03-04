@@ -157,17 +157,7 @@ public:
         uint8_t buf = 0;
         if ( !read_from_device(0x0f, &buf, 1) ) { return 0; }
         if ( buf != 0x6c ) { return 0; }
-
-        // reset device (doesnt work)
-        // read_from_device(0x12, &buf, 1);
-        // write_to_device(0x12, buf|1);
-
-        // while ( 1 ) {
-        //     read_from_device(0x12, &buf, 1);
-        //     if (buf & 1 != 1) { break; }
-        //     sleep_ms(1);
-        // }
-
+        
         // read ctrl3 and set bdu to 1 (might fix problems?)
         read_from_device(0x12, &buf, 1);
         write_to_device(0x12, buf | 0b00100000);
