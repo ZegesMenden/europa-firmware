@@ -7,12 +7,19 @@
 #include "hardware/i2c.h"
 #include "drivers/ws2812.pio.h"
 #include "drivers/buzzer.h"
+#include "drivers/pca9685.h"
+#include "drivers/pio_i2c.h"
 
 // TODO
 // add servo support
 // verify pyro code
 
 namespace perif {
+
+    pca9685 pca();
+
+    char stdio_char_buf[1024] = {0};
+    int stdio_char_buf_position = 0;
 
     bool pyro_1_cont = false;
     bool pyro_2_cont = false;
@@ -25,6 +32,14 @@ namespace perif {
     uint64_t pyro_1_fire_start = 0;
     uint64_t pyro_2_fire_start = 0;
     uint64_t pyro_3_fire_start = 0;
+
+    uint8_t io_timing_idx = 0;
+
+    uint8_t neopixel_timing_idx = 0;
+    uint8_t neopixel_timing_freq = 0;
+
+    uint8_t buzzer_timing_idx = 0;
+    uint8_t buzzer_timing_freq = 0;
         
     bool pyro_1_fire_condition() {
         
@@ -41,18 +56,94 @@ namespace perif {
         return 0;
     }
 
+    uint32_t rgb_from_state(system_state_t state) {
+
+        switch(state) {
+            case(state_boot): { return urgb_u32(5, 5, 5); }
+            case(state_idle): { return urgb_u32(5, 5, 5); }
+            case(state_nav_init): { return urgb_u32(5, 5, 5); }
+            case(state_launch_idle): { return urgb_u32(5, 5, 5); }
+            case(state_launch_detect): { return urgb_u32(5, 5, 5); }
+            case(state_powered_ascent): { return urgb_u32(5, 5, 5); }
+            case(state_ascent_coast): { return urgb_u32(5, 5, 5); }
+            case(state_descent_coast): { return urgb_u32(5, 5, 5); }
+            case(state_landing_start): { return urgb_u32(5, 5, 5); }
+            case(state_landing_guidance): { return urgb_u32(5, 5, 5); }
+            case(state_landing_terminal): { return urgb_u32(5, 5, 5); }
+            case(state_landed): { return urgb_u32(5, 5, 5); }
+            case(state_abort): { return urgb_u32(5, 5, 5); }
+            default: { return urgb_u32(5, 5, 5); }
+        }
+
+    }
+
+    uint8_t neopixel_freq_from_state(system_state_t state) {
+
+        switch(state) {
+            case(state_boot): { return 4; }
+            case(state_idle): { return 4; }
+            case(state_nav_init): { return 4; }
+            case(state_launch_idle): { return 4; }
+            case(state_launch_detect): { return 4; }
+            case(state_powered_ascent): { return 4; }
+            case(state_ascent_coast): { return 4; }
+            case(state_descent_coast): { return 4; }
+            case(state_landing_start): { return 4; }
+            case(state_landing_guidance): { return 4; }
+            case(state_landing_terminal): { return 4; }
+            case(state_landed): { return 4; }
+            case(state_abort): { return 4; }
+            default: { return 4; }
+        }
+
+    }
+
+    uint8_t buzzer_freq_from_state(system_state_t state) {
+
+        return neopixel_freq_from_state(state);
+
+    }
+
+    uint16_t buzzer_tone_from_state(system_state_t state) {
+
+        switch(state) {
+            case(state_boot): { return 500; }
+            case(state_idle): { return 500; }
+            case(state_nav_init): { return 500; }
+            case(state_launch_idle): { return 500; }
+            case(state_launch_detect): { return 500; }
+            case(state_powered_ascent): { return 500; }
+            case(state_ascent_coast): { return 500; }
+            case(state_descent_coast): { return 500; }
+            case(state_landing_start): { return 500; }
+            case(state_landing_guidance): { return 500; }
+            case(state_landing_terminal): { return 500; }
+            case(state_landed): { return 500; }
+            case(state_abort): { return 500; }
+            default: { return 500; }
+        }
+
+    }
+
+    void stdio_new_character_callback(void * ptr) {
+        stdio_char_buf[stdio_char_buf_position++] = getchar();
+    }
+
     void init() {
 
         // gpio init
 
         // pyro enable pins
         gpio_init(pin_pyro_1_fire);
+        gpio_set_dir(pin_pyro_1_fire, 1);
         gpio_put(pin_pyro_1_fire, 0);
         
         gpio_init(pin_pyro_2_fire);
+        gpio_set_dir(pin_pyro_2_fire, 1);
         gpio_put(pin_pyro_2_fire, 0);
         
         gpio_init(pin_pyro_3_fire);
+        gpio_set_dir(pin_pyro_3_fire, 1);
         gpio_put(pin_pyro_3_fire, 0);
         
         // pyro continuity pins
@@ -91,7 +182,7 @@ namespace perif {
         gpio_set_function(pin_spi0_sdi, GPIO_FUNC_SPI);
         gpio_set_function(pin_spi0_sdo, GPIO_FUNC_SPI);
         
-        spi_init(spi0, 8000000);
+        spi_init(spi0, 1000000);
 
         gpio_set_function(qwiic_port0.pin0, qwiic_port0.gpio_func);
         gpio_set_function(qwiic_port0.pin1, qwiic_port0.gpio_func);
@@ -137,12 +228,17 @@ namespace perif {
 
         neopix_init(pin_neopixel);
         buzzer_disable(pin_buzzer);
+        // pio_i2c_init();
 
     }
 
     void update() {
 
+        
+
+        // ============================================================================================
         // pyro logic
+
         #ifdef PYRO_FIRE_EN
 
         pyro_1_fire = gpio_get(pin_pyro_1_cont);
@@ -200,7 +296,33 @@ namespace perif {
 
         #endif
 
+        // ============================================================================================
+        // neopixel and buzzer
 
+        io_timing_idx++;
+        if ( io_timing_idx > 100 ) { io_timing_idx = 0; }
+
+        uint8_t neopix_freq = neopixel_freq_from_state(get_vehicle_state());
+        bool write_neopix = 0;
+        for ( int i = 0; i < neopix_freq; i++ ) {
+            // if time is greater than start time and less than end time for any blink
+            write_neopix |= ( io_timing_idx > (100/neopix_freq)*i && io_timing_idx < ((100/neopix_freq)*i)+10 );
+        }
+
+        if (write_neopix) { neopix_write(rgb_from_state(get_vehicle_state())); }
+        else { neopix_write(0); }
+
+        uint8_t buzzer_freq = buzzer_freq_from_state(get_vehicle_state());
+        bool buzzer_en = 0;
+        for ( int i = 0; i < buzzer_freq; i++ ) {
+            // if time is greater than start time and less than end time for any blink
+            buzzer_en |= ( io_timing_idx > (100/buzzer_freq)*i && io_timing_idx < ((100/buzzer_freq)*i)+10 );
+        }
+
+        if (buzzer_en) { buzzer_tone(pin_buzzer, buzzer_tone_from_state(get_vehicle_state())); }
+        else { buzzer_disable(pin_buzzer); }
+       
+        // ============================================================================================
 
     }
 
