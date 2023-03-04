@@ -1,6 +1,6 @@
 #pragma once
 
-// #define attempt_faster_mul
+#define attempt_faster_mul
 
 template<class T, int rows, int cols = 1>
 class matrix {
