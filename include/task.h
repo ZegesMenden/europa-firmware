@@ -8,37 +8,19 @@ struct task_t {
     callback_t function;
     uint64_t run_interval;
     uint64_t last_run;
+    uint64_t average_runtime;
+    uint64_t n_runs;
 };
 
-template<int n = 1>
-class scheduler {
+void update_task(task_t &task) {
 
-private:
+    if ( task.last_run+task.run_interval < time_us_64() ) {
 
-    task_t tasks[n];
-    unsigned int n_tasks = 0;
-
-public:
-
-    scheduler() {};
-
-    bool add_task(task_t task) {
-        if ( n_tasks+1 < n ) {
-            tasks[n_tasks++] = task;
-            return 1;
-        }
-        return 0;
+        uint64_t t_start = time_us_64();
+        task.function();
+        task.last_run = time_us_64();
+        task.n_runs++;
+        task.average_runtime = (task.last_run-t_start);
     }
 
-    void update() {
-        for ( int i = 0; i < n_tasks; i++ ) {
-
-            if ( tasks[i].last_run + tasks[i].run_interval < time_us_64() ) {
-                tasks[i].function();
-                tasks[i].last_run = time_us_64();
-            }
-
-        }
-    }
-
-};
+}
