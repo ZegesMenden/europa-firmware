@@ -54,12 +54,11 @@ target_include_directories(europa_test PRIVATE
   ${CMAKE_CURRENT_LIST_DIR}/include
   ${CMAKE_CURRENT_LIST_DIR}/include/drivers
 )
-
-# Add any user requested libraries
-target_link_libraries(europa_test
-        )
+# pico_generate_pio_header(europa_test ${CMAKE_CURRENT_LIST_DIR}/include/drivers/i2c.pio)
 
 pico_add_extra_outputs(europa_test)
+
+# example_auto_set_url(europa_test)
 
 target_compile_definitions(europa_test PRIVATE PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64)
 
