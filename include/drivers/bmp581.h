@@ -38,7 +38,7 @@ private:
     int write_buf_to_device(uint8_t addr, uint8_t *buf, int nbytes) {
         // bit 7 must be 0 because write?
         uint8_t _addr = addr & 0x7f;
-        
+
         gpio_put(cs, 1);
         gpio_put(cs, 0);
         
@@ -58,7 +58,7 @@ private:
     int read_from_device(uint8_t addr, uint8_t *buf, int nbytes = 1) {
         // bit 7 must be 1 because reading?
         uint8_t _addr = addr | 0x80;
-        uint8_t repeat_tx = 0xff;
+        uint8_t repeat_tx = 0x00;
 
         gpio_put(cs, 1);
         gpio_put(cs, 0);
@@ -102,6 +102,16 @@ public:
         return 1;
     }
 
+    void set_reg(uint8_t reg, uint8_t val) {
+        write_to_device(reg, val);
+    }
+
+    uint8_t read_reg(uint8_t reg) {
+        uint8_t ret;
+        read_from_device(reg, &ret, 1);
+        return ret;
+    }
+
     /// @brief sets ODR (output data rate) of the barometer
     /// @param odr odr value
     /// @return true if write was successful 
@@ -120,9 +130,15 @@ public:
     /// @param odr odr value
     /// @return true if write was successful 
     bool set_osr(uint8_t osr_pres, uint8_t osr_temp) {
-        write_to_device(0x36, ((osr_pres & 7) << 3) | (osr_temp&7) | 0x40 );
         uint8_t sts = 0;
+        write_to_device(0x36, ((osr_pres & 7) << 3) | (osr_temp&7) | 0x40 );
         read_from_device(0x36, &sts, 1);
+
+        while ( sts != (((osr_pres & 7) << 3) | (osr_temp&7) | 0x40) ) {
+            write_to_device(0x36, ((osr_pres & 7) << 3) | (osr_temp&7) | 0x40 );
+            sleep_ms(10);
+            read_from_device(0x36, &sts, 1);
+        }
         
         uint8_t osr_is_valid = 0;
         read_from_device(0x38, &osr_is_valid, 1);
@@ -132,7 +148,7 @@ public:
 
     bool data_ready() {
         uint8_t buf;
-        read_from_device(0x7, &buf, 1);
+        read_from_device(0x27, &buf, 1);
         return buf&1;
     }
 
@@ -148,11 +164,11 @@ public:
         *ret = (buf[2]<<16) | (buf[1]<<8) | buf[0];
     }
 
-    void read_all_data(int32_t *temp, int32_t *pres) {
+    void read_all_data(int32_t *temp, uint32_t *pres) {
         uint8_t buf[6] = {0};
         read_from_device(0x1d, buf, 6);
-        *temp = (buf[2]<<16) | (buf[1]<<8) | buf[0];
-        *pres = (buf[5]<<16) | (buf[4]<<8) | buf[3];   
+        *temp = (int32_t)(((uint32_t)buf[2] << 16) | ((uint16_t)buf[1] << 8) | buf[0]);
+        *pres = (uint32_t)(((uint32_t)buf[5] << 16) | ((uint16_t)buf[4] << 8) | buf[3]);   
     }
 
 };
