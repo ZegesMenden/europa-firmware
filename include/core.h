@@ -51,10 +51,6 @@ constexpr static float apogee_detect_vel_threshold = -2.f;
 // ============================================================================
 // NAV settings
 
-// process IMU data at 100Hz (no fifo)
-#define NAV_SLOW_UPDATE
-
-
 // number of samples to take to determine gyroscope bias
 constexpr static uint16_t gyro_bias_count = 400;
 
@@ -154,7 +150,7 @@ enum system_state_t {
     state_abort
 };
 
-system_state_t vehicle_state;
+system_state_t vehicle_state = state_boot;
 system_state_t get_vehicle_state() { return vehicle_state; }
 void set_vehicle_state(system_state_t state) { vehicle_state = state; } 
 
@@ -223,9 +219,9 @@ struct _port_t {
 
 _port_t qwiic_port0 = { 14,                             // pin0
                         15,                             // pin1
-                        _port_t::port_protocol::i2c_1,  // protocol
+                        _port_t::port_protocol::gpio,  // protocol
                         GPIO_FUNC_I2C,                  // gpio func
-                        false};                         // bitbang flag
+                        true};                         // bitbang flag
 
 _port_t qwiic_port1 = { 13,                             // pin0
                         12,                             // pin1
