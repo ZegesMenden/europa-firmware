@@ -14,13 +14,13 @@ struct task_t {
 
 void update_task(task_t &task) {
 
-    if ( task.last_run+task.run_interval < time_us_64() ) {
+    // if ( task.last_run+task.run_interval < time_us_64() ) {
 
         uint64_t t_start = time_us_64();
         task.function();
         task.last_run = time_us_64();
         task.n_runs++;
         task.average_runtime = (task.last_run-t_start);
-    }
+    // }
 
 }
