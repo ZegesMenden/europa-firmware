@@ -9,31 +9,38 @@
 
 namespace nav {
 
-	constexpr float altLUT[] = {
-	0.0, 0.4163035225020723, 0.47500105669954806, 0.513102173548425, 0.5419747652136768, 0.5654843012007094, 0.5854480239934159, 0.6028759801095918, 0.6183915635249146, 0.6324083901999832, 0.6452158727914808,
-	0.6570249503112686, 0.6679944199562967, 0.6782470104389435, 0.687879665033116, 0.6969703794715113, 0.7055828986576926, 0.7137700328491678, 0.7215760553867444, 0.7290384725888854, 0.736189354183879,
-	0.7430563496440957, 0.7496634758219397, 0.7560317352829258, 0.7621796074210809, 0.7681234426808453, 0.7738777820699412, 0.7794556184190263, 0.7848686117500598, 0.7901272681484279, 0.7952410893559155,
-	0.8002186986836737, 0.8050679476291622, 0.8097960066590109, 0.8144094429134651, 0.8189142870422581, 0.8233160909564224, 0.8276199779465346, 0.8318306863536598, 0.8359526077687964, 0.8399898205678998,
-	0.8439461194534683, 0.847825041563268, 0.8516298896167076, 0.8553637524955242, 0.8590295235945855, 0.8626299172282288, 0.8661674833356582, 0.8696446206939265, 0.8730635888176794, 0.8764265187001391,
-	0.8797354225289209, 0.882992202492581, 0.8861986587787228, 0.8893564968516312, 0.8924673340863913, 0.8955327058269845, 0.898554070927706, 0.9015328168302063, 0.9044702642223588, 0.9073676713198583,
-	0.9102262378068442, 0.913047108467813, 0.9158313765395681, 0.9185800868088617, 0.9212942384786738, 0.9239747878236838, 0.9266226506533788, 0.929238704599384, 0.9318237912419433, 0.9343787180890195,
-	0.9369042604201759, 0.9394011630062418, 0.9418701417147317, 0.9443118850100618, 0.9467270553567773, 0.9491162905332656, 0.9514802048627635, 0.9538193903678645, 0.9561344178541967, 0.9584258379284554,
-	0.9606941819555306, 0.962939962959081, 0.9651636764695385, 0.9673658013232062, 0.9695468004158188, 0.9717071214136601, 0.9738471974250937, 0.9759674476351379, 0.9780682779055134, 0.9801500813424088,
-	0.9822132388340362, 0.9842581195599004, 0.986285081473557, 0.9882944717605117, 0.9902866272727878, 0.9922618749415852, 0.9942205321693495, 0.9961629072024801, 0.9980892994858215};
-	
-	// untested
-	float x_pow_lut(float x) {
-		
-		int xi = x*1000000;
+	const float altLUT[] = { 0.        , 0.41629385, 0.47499169, 0.5130931 , 0.54196597,
+       0.56547576, 0.58543972, 0.6028679 , 0.61838369, 0.63240071,
+       0.64520838, 0.65701764, 0.66798728, 0.67824003, 0.68787284,
+       0.69696371, 0.70557638, 0.71376365, 0.72156982, 0.72903237,
+       0.73618338, 0.7430505 , 0.74965775, 0.75602613, 0.76217412,
+       0.76811807, 0.77387253, 0.77945047, 0.78486357, 0.79012234,
+       0.79523626, 0.80021397, 0.80506332, 0.80979148, 0.81440501,
+       0.81890995, 0.82331185, 0.82761583, 0.83182663, 0.83594864,
+       0.83998594, 0.84394232, 0.84782133, 0.85162627, 0.85536021,
+       0.85902606, 0.86262654, 0.86616419, 0.8696414 , 0.87306045,
+       0.87642346, 0.87973244, 0.88298929, 0.88619582, 0.88935373,
+       0.89246464, 0.89553009, 0.89855152, 0.90153034, 0.90446786,
+       0.90736533, 0.91022397, 0.91304491, 0.91582924, 0.91857802,
+       0.92129224, 0.92397285, 0.92662078, 0.9292369 , 0.93182205,
+       0.93437704, 0.93690264, 0.93939961, 0.94186865, 0.94431045,
+       0.94672568, 0.94911498, 0.95147895, 0.9538182 , 0.95613328,
+       0.95842476, 0.96069316, 0.962939  , 0.96516277, 0.96736495,
+       0.96954601, 0.97170638, 0.97384651, 0.97596682, 0.9780677 ,
+       0.98014956, 0.98221277, 0.98425771, 0.98628472, 0.98829416,
+       0.99028637, 0.99226167, 0.99422038, 0.99616281, 0.99808925,
+       1.        , 1.00189534, 1.00377555, 1.00564089, 1.00749162,
+       1.00932801, 1.01115028, 1.01295869, 1.01475346, 1.01653483,
+       1.01830301 };
 
-		if ( xi < 0 ) { return 0.0f; }
-		if ( xi > 999999 ) { return 1.f; }
-
-		int x_partial = xi%10000;
-		xi /= 10000;
-
-		return altLUT[xi]+(altLUT[xi+1]-altLUT[xi])/float(10000-x_partial);
-
+	float fast_pow(float P) {
+		if ( P < 0.0f ) { return 0.0f; }
+		int idx = int(P * 100.f);
+		float diff = P * 100.f - idx;
+		if (idx >= 110) {
+			return 1.01830301;
+		}
+		return altLUT[idx] * (1 - diff) + diff * altLUT[idx + 1];
 	}
 
 	class kalman_1dof {
@@ -108,32 +115,32 @@ namespace nav {
 			BUk(0, 0) = accel * dt_dt_2;
 			BUk(0, 1) = accel * dt;
 
-			// Xk = (Fk*Xk)+BUk;
-			// Pk = Fk*Pk*~Fk + Qk;
-
 			Xk = (Fk*Xk)+BUk;
-			Pk = Fk*Pk*Fk + Qk;
+			Pk = Fk*Pk*~Fk + Qk;
+
+			// Xk = (Fk*Xk)+BUk;
+			// Pk = Fk*Pk*Fk + Qk;
 		};
 
 		void update_position(float pos) {
 			Zk(0, 0) = pos;
 			
 			// temporary inverted matrix
-			// auto tmp = Hk_x*Pk*~Hk_x + Rk; // unnecesarry transpose
-			auto tmp = Hk_x*Pk*Hk_x + Rk;
+			auto tmp = Hk_x*Pk*~Hk_x + Rk; // unnecesarry transpose
+			// auto tmp = Hk_x*Pk*Hk_x + Rk;
 
 			// returned true if inversion was successful? 
 			bool good_invert;
 			tmp = tmp.invert(&good_invert, 0.001f);
 			
 			if ( good_invert ) {
-				// K = Pk*~Hk_x * tmp; // unecesarry transpose
-				// Xk = Xk + K*(Zk - Hk_x*Xk);
-				// Pk = Pk - K*Hk_x*Pk;
+				K = Pk*~Hk_x * tmp; // unecesarry transpose
+				Xk = Xk + K*(Zk - Hk_x*Xk);
+				Pk = Pk - K*Hk_x*Pk;
 				
-				K =  Pk * Hk_x * tmp;
-				Xk = Xk + K * (Zk - Hk_x * Xk);
-				Pk = Pk - K * Hk_x * Pk;
+				// K =  Pk * Hk_x * tmp;
+				// Xk = Xk + K * (Zk - Hk_x * Xk);
+				// Pk = Pk - K * Hk_x * Pk;
 
 			}
 		};
@@ -270,14 +277,14 @@ namespace nav {
 		// Q is state uncertainty
 		// R is measurement uncertainty
 
-		kalman_x.set_Q(400.0f, 250.f, 1.f);
-    	kalman_x.set_R(750.0f, 25.0f, 1.0f);
+		kalman_x.set_Q(400.0f, 1.f, 1.f);
+    	kalman_x.set_R(2500.0f, 1.0f, 1.0f);
 
-		kalman_y.set_Q(0.f, 0.f, 0.f);
-		kalman_y.set_R(0.f, 0.f, 0.f);
+		kalman_y.set_Q(1.f, 1.f, 1.f);
+		kalman_y.set_R(1.f, 1.f, 1.f);
 
-		kalman_z.set_Q(0.f, 0.f, 0.f);
-		kalman_z.set_R(0.f, 0.f, 0.f);
+		kalman_z.set_Q(1.f, 1.f, 1.f);
+		kalman_z.set_R(1.f, 1.f, 1.f);
 
 		printf("============================================================================\nNAV init:\n\nInitializing IMU\n");
 		
@@ -339,34 +346,41 @@ namespace nav {
 		// ============================================================================
 		// barometer
 		
+		uint32_t last_raw_pres = raw::pressure;
 		baro.read_all_data(&raw::temperature, &raw::pressure);
-
-		pressure = (float)(raw::pressure / 64.0);
-		temperature = float(raw::temperature)/65536.0f;
 		
-		// H = 44330 * [1 - (P/p0)^(1/5.255) ]
+		if ( raw::pressure != last_raw_pres ) {
+			pressure = (float)(raw::pressure / 64.0);
+			temperature = float(raw::temperature)/65536.0f;
+			
+			// H = 44330 * [1 - (P/p0)^(1/5.255) ]
 
-		//H = altitude (m)
-		//P = measured pressure (Pa) from the sensor
-		//p0 = reference pressure at sea level (e.g. 1013.25hPa)
+			//H = altitude (m)
+			//P = measured pressure (Pa) from the sensor
+			//p0 = reference pressure at sea level (e.g. 1013.25hPa)
 
-		altitude_asl = ( 1.f - pow(pressure/101325.f, 1.f/5.255f) ) * 44330.f;
+			altitude_asl = ( 1.f - fast_pow(pressure/101325.f) ) * 44330.f;
 
-		if ( !flags::nav::baro_debiased ) {
+			if ( !flags::nav::baro_debiased && altitude_asl < 500.f) {
 
-			pad_altitude += altitude_asl;
-			timing::baro_bias_count++;
+				pad_altitude += altitude_asl;
+				timing::baro_bias_count++;
 
-			if ( timing::baro_bias_count >= baro_bias_count ) {
-				flags::nav::baro_debiased = true;
-				pad_altitude /= (float)baro_bias_count;
+				if ( timing::baro_bias_count >= baro_bias_count ) {
+					flags::nav::baro_debiased = true;
+					pad_altitude /= (float)baro_bias_count;
+				}
+
+			} else {
+
+				altitude = altitude_asl - pad_altitude;
+				if ( get_vehicle_state() == state_nav_init && altitude > 2 ) { flags::nav::baro_debiased = false; timing::baro_bias_count = 0; }
+
+				
+				kalman_x.update_position(altitude);
 			}
+		}	
 
-		} else {
-			altitude = altitude_asl - pad_altitude;
-			kalman_x.update_position(altitude);
-		}
-		
 		// ============================================================================
 		// IMU
 
