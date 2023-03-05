@@ -144,7 +144,9 @@ namespace datalog {
         data.points.gps_pdop       = *ptrs.points.gps_pdop;
         data.points.gps_n_sats     = *ptrs.points.gps_n_sats;
 
+        spi_set_baudrate(spi0, 8000000);
         flash_write_page(pin_cs_flash, page, data.raw);
+        spi_set_baudrate(spi0, 2000000);
 
     }
 
