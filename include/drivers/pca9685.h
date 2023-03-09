@@ -1,6 +1,6 @@
 #include "hardware/i2c.h"
 #include "hardware/gpio.h"
-
+#pragma once 
 class pca9685 {
 
 private:
@@ -21,7 +21,7 @@ private:
     int write_buf_to_device(uint8_t addr, uint8_t *data, int nbytes) {
         int reta = i2c_write_blocking(inst, i2c_addr, &addr, 1, false);
         int retb = i2c_write_blocking(inst, i2c_addr, data, nbytes, false);
-        return (reta == 1)&(retb==nbytes);
+        return (reta == 1)&(retb==nbytes);       
     }
 
     int read_from_device(uint8_t addr, uint8_t *ret) {
@@ -32,6 +32,7 @@ private:
 public:
 
     pca9685() {}
+    pca9685(uint8_t addr, i2c_inst_t *_inst) { i2c_addr = addr; inst = _inst; }
 
     bool init() {
 

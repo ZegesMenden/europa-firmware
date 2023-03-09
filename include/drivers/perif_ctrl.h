@@ -8,7 +8,9 @@
 #include "drivers/ws2812.pio.h"
 #include "drivers/buzzer.h"
 #include "drivers/pca9685.h"
-#include "drivers/pio_i2c.h"
+#include "drivers/servo.h"
+
+#pragma once
 
 // TODO
 // add servo support
@@ -16,7 +18,11 @@
 
 namespace perif {
 
-    pca9685 pca();
+    pca9685 pca(0b10011110, i2c0);
+
+    uint16_t voltage_pyro_raw = 0;
+    uint16_t voltage_batt_raw = 0;
+    uint16_t voltage_switch_raw = 0;
 
     char stdio_char_buf[1024] = {0};
     int stdio_char_buf_position = 0;
@@ -41,6 +47,9 @@ namespace perif {
     uint8_t buzzer_timing_idx = 0;
     uint8_t buzzer_timing_freq = 0;
         
+    uint16_t servo_1_position = 1500;
+    uint16_t servo_2_position = 1500;
+    
     bool pyro_1_fire_condition() {
         
         return 0;
@@ -182,7 +191,7 @@ namespace perif {
         gpio_set_function(pin_spi0_sdi, GPIO_FUNC_SPI);
         gpio_set_function(pin_spi0_sdo, GPIO_FUNC_SPI);
         
-        spi_init(spi0, 1000000);
+        spi_init(spi0, 2000000);
 
         gpio_set_function(qwiic_port0.pin0, qwiic_port0.gpio_func);
         gpio_set_function(qwiic_port0.pin1, qwiic_port0.gpio_func);
@@ -228,18 +237,21 @@ namespace perif {
 
         neopix_init(pin_neopixel);
         buzzer_disable(pin_buzzer);
-        // pio_i2c_init();
+        
+        servo_init(24);
+        servo_init(25);
+
+        servo_write(24, servo_1_position);
+        servo_write(25, servo_2_position);
 
     }
 
     void update() {
 
-        
-
         // ============================================================================================
         // pyro logic
 
-        #ifdef PYRO_FIRE_EN
+        #ifdef PYRO_EN
 
         pyro_1_fire = gpio_get(pin_pyro_1_cont);
         pyro_2_fire = gpio_get(pin_pyro_2_cont);
@@ -297,6 +309,20 @@ namespace perif {
         #endif
 
         // ============================================================================================
+        // ADC logic
+
+        adc_select_input(1);
+        voltage_pyro_raw = adc_read();
+
+        adc_select_input(2);
+        voltage_batt_raw = adc_read();
+
+        adc_select_input(3);
+        voltage_switch_raw = adc_read();
+
+        flags::perif::switch_sts = voltage_switch_raw > 3500;
+
+        // ============================================================================================
         // neopixel and buzzer
 
         io_timing_idx++;
@@ -323,6 +349,10 @@ namespace perif {
         else { buzzer_disable(pin_buzzer); }
        
         // ============================================================================================
+        // servos
+
+        servo_write(24, servo_1_position);
+        servo_write(25, servo_2_position);
 
     }
 

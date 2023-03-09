@@ -1,5 +1,5 @@
 #include "core.h"
-
+#pragma once
 void update_sys_state() {
 
     system_state_t state = get_vehicle_state();

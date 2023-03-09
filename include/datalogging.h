@@ -1,5 +1,6 @@
 #include "core.h"
 #include "drivers/flash.h"
+#pragma once
 
 #ifdef DATALOG_EN
 
@@ -15,6 +16,9 @@ namespace datalog {
             uint64_t time;
             uint8_t flag_gpio;
             uint8_t flag_state;
+
+            uint16_t voltage_batt;
+            uint16_t voltage_pyro;
             
             vec3<float> position;
             vec3<float> velocity;
@@ -22,21 +26,14 @@ namespace datalog {
 
             quat<float> rotation;
             
-            uint16_t accel_x;
-            uint16_t accel_y;
-            uint16_t accel_z;
-
-            uint16_t ori_rate_x;
-            uint16_t ori_rate_y;
-            uint16_t ori_rate_z;
+            vec3<int16_t> acceleration;
+            vec3<int16_t> ori_rate;
 
             float baro_alt;
             float baro_pressure;
             float baro_temp;
 
-            uint16_t mag_x;
-            uint16_t mag_y;
-            uint16_t mag_z;
+            vec3<int16_t> mag;
             
             uint32_t gps_latitude;
             uint32_t gps_longitude;
@@ -60,27 +57,22 @@ namespace datalog {
             uint32_t* time;
             uint8_t* flag_gpio;
             uint8_t* flag_state;
-            
+            uint16_t* voltage_batt;
+            uint16_t* voltage_pyro;
+                        
             vec3<float>* position;
             vec3<float>* velocity;
             quat<float>* rotation;
             vec3<float>* accel_bias;
             
-            uint16_t* accel_x;
-            uint16_t* accel_y;
-            uint16_t* accel_z;
-
-            uint16_t* ori_rate_x;
-            uint16_t* ori_rate_y;
-            uint16_t* ori_rate_z;
+            vec3<int16_t>* acceleration;
+            vec3<int16_t>* ori_rate;
 
             float* baro_alt;
             float* baro_pressure;
             float* baro_temp;
 
-            uint16_t* mag_x;
-            uint16_t* mag_y;
-            uint16_t* mag_z;
+            vec3<int16_t>* mag;
             
             uint32_t* gps_latitude;
             uint32_t* gps_longitude;
@@ -92,7 +84,7 @@ namespace datalog {
 
         } points;
 
-        void *raw[26] = {NULL};
+        void *raw[22] = {NULL};
 
         static_assert(sizeof(points) == sizeof(raw));
     } log_ptrs_t;
@@ -114,27 +106,22 @@ namespace datalog {
         data.points.time           = *ptrs.points.time;
         data.points.flag_gpio      = *ptrs.points.flag_gpio;
         data.points.flag_state     = *ptrs.points.flag_state;
+        data.points.voltage_batt   = *ptrs.points.voltage_batt;
+        data.points.voltage_pyro   = *ptrs.points.voltage_pyro;
 
         data.points.position       = *ptrs.points.position;
         data.points.velocity       = *ptrs.points.velocity;
         data.points.rotation       = *ptrs.points.rotation;
         data.points.accel_bias     = *ptrs.points.accel_bias;
 
-        data.points.accel_x        = *ptrs.points.accel_x;
-        data.points.accel_y        = *ptrs.points.accel_y;
-        data.points.accel_z        = *ptrs.points.accel_z;
+        data.points.acceleration   = *ptrs.points.acceleration;
 
-        data.points.ori_rate_x     = *ptrs.points.ori_rate_x;
-        data.points.ori_rate_y     = *ptrs.points.ori_rate_y;
-        data.points.ori_rate_z     = *ptrs.points.ori_rate_z;
-
+        data.points.ori_rate       = *ptrs.points.ori_rate;
         data.points.baro_alt       = *ptrs.points.baro_alt;
         data.points.baro_pressure  = *ptrs.points.baro_pressure;
         data.points.baro_temp      = *ptrs.points.baro_temp;
 
-        data.points.mag_x          = *ptrs.points.mag_x;
-        data.points.mag_y          = *ptrs.points.mag_y;
-        data.points.mag_z          = *ptrs.points.mag_z;
+        data.points.mag            = *ptrs.points.mag;
 
         data.points.gps_latitude   = *ptrs.points.gps_latitude;
         data.points.gps_longitude  = *ptrs.points.gps_longitude;

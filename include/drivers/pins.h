@@ -1,4 +1,4 @@
-
+#pragma once
 // state identification
 
 #define pin_neopixel    16
