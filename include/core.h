@@ -13,7 +13,7 @@
 // general settings
 
 // enable pyros
-#define PYRO_FIRE_EN
+#define PYRO_EN
 
 // enable datalogging
 #define DATALOG_EN
@@ -82,6 +82,8 @@ namespace flags {
 
         volatile bool velocity_over_apogee_threshold = false;
 
+        uint8_t sts_bitmap = 0;
+
     }
 
     namespace boot {
@@ -101,6 +103,17 @@ namespace flags {
         volatile bool kalman_x_converged = false;
         volatile bool kalman_y_converged = false;
         volatile bool kalman_z_converged = false;
+
+    }
+
+    namespace perif {
+
+        uint8_t gpio_sts = 0;
+        uint8_t pyro_sts = 0;
+
+        volatile bool running_from_lipo = false;
+        volatile bool pyro_has_power = false;
+        volatile bool switch_sts = false;
 
     }
 
@@ -192,6 +205,25 @@ bool vehicle_has_launched() {
     }
 }
 
+bool vehicle_has_control() {
+    switch(vehicle_state) {
+        case(state_boot): { return 0; }
+        case(state_idle): { return 0; }
+        case(state_nav_init): { return 0; }
+        case(state_launch_idle): { return 0; }
+        case(state_launch_detect): { return 0; }
+        case(state_powered_ascent): { return 1; }
+        case(state_ascent_coast): { return 0; }
+        case(state_descent_coast): { return 0; }
+        case(state_landing_start): { return 1; }
+        case(state_landing_guidance): { return 1; }
+        case(state_landing_terminal): { return 1; }
+        case(state_landed): { return 0; }
+        case(state_abort): { return 0; }
+        default: { return 0; }
+    }
+}
+
 // peripheral bus flags and config
 
 struct _port_t {
@@ -220,7 +252,7 @@ struct _port_t {
 _port_t qwiic_port0 = { 14,                             // pin0
                         15,                             // pin1
                         _port_t::port_protocol::gpio,  // protocol
-                        GPIO_FUNC_I2C,                  // gpio func
+                        GPIO_FUNC_SIO,                  // gpio func
                         true};                         // bitbang flag
 
 _port_t qwiic_port1 = { 13,                             // pin0
@@ -252,10 +284,10 @@ void print_compile_config() {
     printf("============================================================================\n\n");
     printf("COMPILE CONFIGS\n\n");
     
-    #ifdef PYRO_FIRE_EN
-        printf("PYRO_FIRE_EN is ENABLED\n");
+    #ifdef PYRO_EN
+        printf("PYRO_EN is ENABLED\n");
     #else
-        printf("PYRO_FIRE_EN is DISABLED\n");
+        printf("PYRO_EN is DISABLED\n");
     #endif
 
     #ifdef DATALOG_EN
