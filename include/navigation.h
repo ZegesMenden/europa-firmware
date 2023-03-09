@@ -206,17 +206,22 @@ namespace nav {
 	
 	};
 
+	float mass;
+
 	const vec3<float> gravity(9.816, 0.0, 0.0);
 
-	vec3<float> rotational_velocity;
 	quat<float> rotation;
+	vec3<float> rotational_velocity;
 	
 	vec3<float> acceleration_l;
 	vec3<float> acceleration_i;
-	vec3<float> acceleration_b;
-	vec3<float> velocity;
+	
 	vec3<float> position;
+	vec3<float> velocity;
 
+	vec3<float> mag_field;
+
+	vec3<float> acceleration_b;
 	vec3<float> covariance_position;
 	vec3<float> covariance_velocity;
 	vec3<float> covariance_acceleration;
@@ -260,6 +265,8 @@ namespace nav {
 		uint32_t read_time = 0;
 		uint32_t total_time = 0;
 
+		vec3<int16_t> mag;
+
 	}
 
 	kalman_1dof kalman_x;
@@ -271,7 +278,6 @@ namespace nav {
 	lis2mdl mag(spi0, pin_cs_mag);
 
 	// initialize sensors and configure data frequencies / sensitivity
-	
 	bool init() {
 
 		// Q is state uncertainty
