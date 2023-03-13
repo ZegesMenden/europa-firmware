@@ -212,6 +212,7 @@ namespace nav {
 
 	quat<float> rotation;
 	vec3<float> rotational_velocity;
+	vec3<float> rotational_velocity_bias;
 	
 	vec3<float> acceleration_l;
 	vec3<float> acceleration_i;
@@ -309,7 +310,6 @@ namespace nav {
 		if ( !imu.set_fifo_batch_rate(0b0110, 0b0110) ) { boot_panic("Failed to configure IMU"); return 0; }
 		if ( !imu.set_fifo_page_4(0, 0, 0b110) ) { boot_panic("Failed to configure IMU"); return 0; }
 		printf("Done\n\n");
-
 		
 		printf("Initializing Barometer\n");
 		uint64_t t_start = time_us_64();
@@ -341,7 +341,7 @@ namespace nav {
 		// if ( !sts ) { boot_panic("Failed to configure Barometer");  }
 
 		printf("Done\n\n");	
-		
+
 		printf("============================================================================\n");
 
 		return 1;
@@ -382,8 +382,8 @@ namespace nav {
 				altitude = altitude_asl - pad_altitude;
 				if ( get_vehicle_state() == state_nav_init && altitude > 2 ) { flags::nav::baro_debiased = false; timing::baro_bias_count = 0; }
 
-				
 				kalman_x.update_position(altitude);
+
 			}
 		}	
 
@@ -410,18 +410,18 @@ namespace nav {
 				// gyroscope data
 				case(1): {
 					if ( raw::fifo_gyro_pos > 64 ) { break; }
-					raw::fifo_gyro[raw::fifo_gyro_pos++] = vec3<int16_t>( (raw::fifo_frame_buf[i].data[1]) | (raw::fifo_frame_buf[i].data[2]<<8), 
-																		 -(raw::fifo_frame_buf[i].data[3]) | (raw::fifo_frame_buf[i].data[4]<<8),
-																		  (raw::fifo_frame_buf[i].data[5]) | (raw::fifo_frame_buf[i].data[6]<<8));
+					raw::fifo_gyro[raw::fifo_gyro_pos++] = vec3<int16_t>( int16_t((raw::fifo_frame_buf[i].data[1]) | (raw::fifo_frame_buf[i].data[2]<<8)), 
+																		 -int16_t((raw::fifo_frame_buf[i].data[3]) | (raw::fifo_frame_buf[i].data[4]<<8)),
+																		  int16_t((raw::fifo_frame_buf[i].data[5]) | (raw::fifo_frame_buf[i].data[6]<<8)));
 					break;
 				}
 
 				// accelerometer data
 				case(2): {
 					if ( raw::fifo_accel_pos > 64 ) { break; }
-					raw::fifo_accel[raw::fifo_accel_pos++] = vec3<int16_t>( (raw::fifo_frame_buf[i].data[1]) | (raw::fifo_frame_buf[i].data[2]<<8), 
-																		   -(raw::fifo_frame_buf[i].data[3]) | (raw::fifo_frame_buf[i].data[4]<<8),
-																		    (raw::fifo_frame_buf[i].data[5]) | (raw::fifo_frame_buf[i].data[6]<<8));
+					raw::fifo_accel[raw::fifo_accel_pos++] = vec3<int16_t>( int16_t((raw::fifo_frame_buf[i].data[1]) | (raw::fifo_frame_buf[i].data[2]<<8)), 
+																		   -int16_t((raw::fifo_frame_buf[i].data[3]) | (raw::fifo_frame_buf[i].data[4]<<8)),
+																		    int16_t((raw::fifo_frame_buf[i].data[5]) | (raw::fifo_frame_buf[i].data[6]<<8)));
 					break;
 				}
 
@@ -434,14 +434,7 @@ namespace nav {
 		}
 
 		raw::read_time = time_us_32() - t_read_start;
-		
 		uint32_t t_process_start = time_us_32();
-
-		// convert raw values to real numbers
-		// acceleration_l = (vec3<float>)raw::accel * 0.0009765625f;
-		// rotational_velocity = (vec3<float>)raw::gyro * 0.00106526443f;
-
-		uint32_t process_t_start = time_us_32();
 
 		for ( int i = 0; i < raw::fifo_gyro_pos; i++ ) {
 
@@ -452,20 +445,27 @@ namespace nav {
 			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle ) {
 
 				// sensor debiasing
-				// TODO:
-				// save bias to IMU
 				if ( get_vehicle_state() == state_nav_init ) {
 
 					if ( !flags::nav::gyro_debiased ) {
+						rotational_velocity = ((vec3<float>)(raw::gyro)) * 0.00106526443f;
+						float rotational_velocity_magnitude = rotational_velocity.len();
+						
+						if ( rotational_velocity_magnitude < 0.025 ) {
+							rotational_velocity_bias += rotational_velocity;
+							timing::gyro_bias_count++;
 
-						raw::gyro_bias += vec3<int32_t>(raw::gyro.x, raw::gyro.y, raw::gyro.z);
-						timing::gyro_bias_count++;
-
-						if ( timing::gyro_bias_count >= gyro_bias_count ) {
-							flags::nav::gyro_debiased = true;
-							raw::gyro_bias /= gyro_bias_count;
+							if ( timing::gyro_bias_count >= gyro_bias_count ) {
+								flags::nav::gyro_debiased = true;
+								rotational_velocity_bias /= float(gyro_bias_count);
+							}
+						} else { 
+							if ( rotational_velocity_magnitude > 0.08 ) {
+								timing::gyro_bias_count = 0;
+								rotational_velocity_bias = vec3();
+							} 
 						}
-
+						
 					}
 
 				}
@@ -473,13 +473,14 @@ namespace nav {
 				// gyro integration
 				if ( flags::nav::gyro_debiased ) {
 
-					rotational_velocity = (vec3<float>)(raw::gyro-raw::gyro_bias) * 0.00106526443f;
-					float rotational_velocity_magnitute = rotational_velocity.len();
+					rotational_velocity = ((vec3<float>)(raw::gyro)) * 0.00106526443f;
+					rotational_velocity -= rotational_velocity_bias;
+					float rotational_velocity_magnitude = rotational_velocity.len();
 					
 					// if there is rotation
-					if ( rotational_velocity_magnitute > 0.00001f ) {
+					if ( rotational_velocity_magnitude > 0.00001f ) {
 
-						quat<float> q = quat<float>().from_axis_angle(rotational_velocity_magnitute * gyro_read_dt, rotational_velocity/rotational_velocity_magnitute);
+						quat<float> q = quat<float>().from_axis_angle(rotational_velocity_magnitude * gyro_read_dt, rotational_velocity/rotational_velocity_magnitude);
 						rotation *= q;
 						rotation = rotation.normalize();
 
@@ -489,16 +490,20 @@ namespace nav {
 
 			}
 
+			float gyro_deviation_from_0 = rotational_velocity.len() - landing_detect_ori_threshold;
+			flags::state::gyro_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
+															( gyro_deviation_from_0 < landing_detect_ori_threshold ) & \
+															( gyro_deviation_from_0 > -landing_detect_ori_threshold );
+
 		}
 
 		for ( int i = 0; i < raw::fifo_accel_pos; i++ ) {
 
 			constexpr float accel_read_dt = 1.f/104.f;
 
-			// kalman filter stuff probably
 			raw::accel = raw::fifo_accel[i];
 			acceleration_l = (vec3<float>)raw::accel * 0.009765625f;
-			acceleration_i = rotation.rotateVec(acceleration_l);
+			acceleration_i = rotation.rotate_vec(acceleration_l);
 			acceleration_i -= gravity;
 
 			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle ) {
@@ -519,12 +524,25 @@ namespace nav {
 
 			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {
 
+				// if accel is within +- 6 degrees of current orientation, mark orientation as converged
 				float angle = acosf(clamp(acceleration_i.dot(vec3<float>(1.0, 0.0, 0.0)), -1.0f, 1.0f));
+				flags::nav::orientation_converged = ((1.45f < angle) & (angle < 1.68f));
+
+				// complementary filter with accelerometer
 				vec3<float> axis = acceleration_i.cross(vec3<float>(1.0, 0.0, 0.0));
 				rotation = quat<float>().from_axis_angle(0.0001f * angle, axis) * rotation;
 				rotation = rotation.normalize();
 
 			}
+
+			flags::state::accel_over_ld_threshold = (get_vehicle_state() == state_launch_detect) & ( acceleration_l.x > launch_detect_accel_threshold );
+			flags::state::accel_under_burnout_threshold = (get_vehicle_state() == state_powered_ascent) & ( acceleration_l.x < burnout_detect_accel_threshold );
+			flags::state::accel_over_landing_threshold = (get_vehicle_state() == state_landing_start) & ( acceleration_l.x > landing_burn_detect_accel_threshold );
+
+			float deviation_from_g = (acceleration_l.len()-9.816);
+			flags::state::accel_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
+															( deviation_from_g < landing_detect_accel_threshold ) & \
+															( deviation_from_g > -landing_burn_detect_accel_threshold );
 
 		}
 
