@@ -480,7 +480,7 @@ public:
      * @param v vector to rotate
      * @return rotated vector
      */
-    vec3<T> rotateVec(const quat& q) const {
+    vec3<T> rotate_vec(const quat& q) const {
         quat<T> qNew = this.rotate(q);
         return vec3<T>(qNew.x, qNew.y, qNew.z);
     }; // input quat ouput vec3
@@ -490,7 +490,7 @@ public:
      * @param v vector to rotate
      * @return rotated vector
      */
-    vec3<T> rotateVec(const vec3<T>& v) const {
+    vec3<T> rotate_vec(const vec3<T>& v) const {
         quat<T> qNew = this->rotate(quat<T>(0.0, v.x, v.y, v.z));
         return vec3<T>(qNew.x, qNew.y, qNew.z);
     };// input vec3 ouput vec3
