@@ -16,6 +16,7 @@ namespace datalog {
             uint64_t time;
             uint8_t flag_gpio;
             uint8_t flag_state;
+            uint8_t active_state_timer;
 
             uint16_t voltage_batt;
             uint16_t voltage_pyro;
@@ -57,6 +58,8 @@ namespace datalog {
             uint32_t* time;
             uint8_t* flag_gpio;
             uint8_t* flag_state;
+            uint8_t* active_state_timer;
+
             uint16_t* voltage_batt;
             uint16_t* voltage_pyro;
                         
@@ -84,7 +87,7 @@ namespace datalog {
 
         } points;
 
-        void *raw[22] = {NULL};
+        void *raw[23] = {NULL};
 
         static_assert(sizeof(points) == sizeof(raw));
     } log_ptrs_t;
@@ -95,6 +98,20 @@ namespace datalog {
     log_t data;
     uint8_t log_idx = 0;
 
+    uint16_t find_flash_start() {
+
+        for ( int i = 0; i < 15625; i++ ) {
+            uint8_t read_buf[256] = {0};
+            flash_read_page(pin_cs_flash, i, read_buf);
+            if ( read_buf[0] == 0xff ) { 
+                flash_read_page(pin_cs_flash, i++, read_buf);
+                if ( read_buf[0] == 0xff ) { break; } // if the next page is also 
+            }
+        }
+
+        return page;
+    }
+
     bool valid_pointers() {
         for ( int i = 0; i < sizeof(ptrs.raw); i++ ) { if ( ptrs.raw[i] == NULL ) { return 0; } }
         return 1;
@@ -102,38 +119,39 @@ namespace datalog {
 
     void log_flash_data() {
 
-        data.points.state          = *ptrs.points.state;
-        data.points.time           = *ptrs.points.time;
-        data.points.flag_gpio      = *ptrs.points.flag_gpio;
-        data.points.flag_state     = *ptrs.points.flag_state;
-        data.points.voltage_batt   = *ptrs.points.voltage_batt;
-        data.points.voltage_pyro   = *ptrs.points.voltage_pyro;
+        data.points.state               = *ptrs.points.state;
+        data.points.time                = *ptrs.points.time;
+        data.points.flag_gpio           = *ptrs.points.flag_gpio;
+        data.points.flag_state          = *ptrs.points.flag_state;
+        data.points.active_state_timer  = *ptrs.points.active_state_timer;
+        data.points.voltage_batt        = *ptrs.points.voltage_batt;
+        data.points.voltage_pyro        = *ptrs.points.voltage_pyro;
 
-        data.points.position       = *ptrs.points.position;
-        data.points.velocity       = *ptrs.points.velocity;
-        data.points.rotation       = *ptrs.points.rotation;
-        data.points.accel_bias     = *ptrs.points.accel_bias;
+        data.points.position            = *ptrs.points.position;
+        data.points.velocity            = *ptrs.points.velocity;
+        data.points.rotation            = *ptrs.points.rotation;
+        data.points.accel_bias          = *ptrs.points.accel_bias;
 
-        data.points.acceleration   = *ptrs.points.acceleration;
+        data.points.acceleration        = *ptrs.points.acceleration;
 
-        data.points.ori_rate       = *ptrs.points.ori_rate;
-        data.points.baro_alt       = *ptrs.points.baro_alt;
-        data.points.baro_pressure  = *ptrs.points.baro_pressure;
-        data.points.baro_temp      = *ptrs.points.baro_temp;
+        data.points.ori_rate            = *ptrs.points.ori_rate;
+        data.points.baro_alt            = *ptrs.points.baro_alt;
+        data.points.baro_pressure       = *ptrs.points.baro_pressure;
+        data.points.baro_temp           = *ptrs.points.baro_temp;
 
-        data.points.mag            = *ptrs.points.mag;
+        data.points.mag                 = *ptrs.points.mag;
 
-        data.points.gps_latitude   = *ptrs.points.gps_latitude;
-        data.points.gps_longitude  = *ptrs.points.gps_longitude;
+        data.points.gps_latitude        = *ptrs.points.gps_latitude;
+        data.points.gps_longitude       = *ptrs.points.gps_longitude;
 
-        data.points.gps_accuracy_h = *ptrs.points.gps_accuracy_h;
-        data.points.gps_accuracy_v = *ptrs.points.gps_accuracy_v;
-        data.points.gps_pdop       = *ptrs.points.gps_pdop;
-        data.points.gps_n_sats     = *ptrs.points.gps_n_sats;
+        data.points.gps_accuracy_h      = *ptrs.points.gps_accuracy_h;
+        data.points.gps_accuracy_v      = *ptrs.points.gps_accuracy_v;
+        data.points.gps_pdop            = *ptrs.points.gps_pdop;
+        data.points.gps_n_sats          = *ptrs.points.gps_n_sats;
 
         spi_set_baudrate(spi0, 8000000);
         flash_write_page(pin_cs_flash, page, data.raw);
-        spi_set_baudrate(spi0, 2000000);
+        spi_set_baudrate(spi0, spi_default_baud);
 
     }
 
@@ -144,10 +162,31 @@ namespace datalog {
         uint8_t a, b, c;
         get_jdec(pin_cs_flash, &a, &b, &c);
 
-        if ( a == b == c == 0 ) { return 0; }
+        // if ( a == b == c == 0 ) { return 0; }
 
-        // erase chip?
+        printf("============================================================================\n");
+        printf("locating flash start page...\n");
+        
+        spi_set_baudrate(spi0, 8000000);
+        while(flash_busy(pin_cs_flash)) { ; }
+        flash_erase_chip(pin_cs_flash);
+        for ( int i = 0; i < 2000; i++ ) {
+            uint8_t b[256] = {0x69};
+            while(flash_busy(pin_cs_flash)) { ; }
+            flash_write_page(pin_cs_flash, i, b);
+        }
+        find_flash_start();
 
+        printf("start page: %i\nremaining pages: %i (%f% / %fs)\n", page, (15625-page), 100.f*(float(page)/float(15625-page)), float(15625-page)/100.f);
+        printf("flash storage: [");
+        for ( int i = 0; i < 20; i++ ) {
+            if ( i*5 < (100.f*(float(page)/float(15625-page))) ) { printf("="); }
+            else { printf(" "); }
+        }
+        printf("]\n");
+        printf("============================================================================\n");
+
+        spi_set_baudrate(spi0, spi_default_baud);
         return 1;
 
     }
@@ -156,15 +195,13 @@ namespace datalog {
 
         switch(get_vehicle_state()) {
             case(state_boot): { 
-                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
                 break;
             }
             case(state_idle): { 
-                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
                 break;
             }
             case(state_nav_init): { 
-                if ( ++log_idx >= 2 ) { log_flash_data(); log_idx = 0; }
+                if ( ++log_idx >= 5 ) { log_flash_data(); log_idx = 0; }
                 break;
             }
             case(state_launch_idle): { 
@@ -200,7 +237,13 @@ namespace datalog {
                 break;
             }
             case(state_landed): { 
-                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
+                if ( ++log_idx >= 2 ) {
+
+                    // only log for 5 seconds after landing
+                    if ( time_us_64() < timing::get_t_landing()+5000000 ) { log_flash_data(); }
+                    log_idx = 0;
+
+                }
                 break;
             }
             case(state_abort): { 
