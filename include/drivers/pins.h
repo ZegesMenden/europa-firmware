@@ -36,7 +36,7 @@
 #define pin_cs_mag   5
 #define pin_cs_imu   6
 #define pin_cs_baro  7
-#define pin_cs_flash 7
+#define pin_cs_flash 11
 #define pin_cs_extra 17
 
 #define pin_adc_pyro   27
