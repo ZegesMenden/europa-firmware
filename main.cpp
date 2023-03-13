@@ -13,7 +13,7 @@
 
 task_t task_nav = { (callback_t)nav::update, 10000, 0, 0, 0 };
 task_t task_perif = { (callback_t)perif::update, 10000, 0, 0, 0 };
-task_t task_state = { (callback_t)update_sys_state, 10000, 0, 0, 0 };
+task_t task_state = { (callback_t)state::update, 10000, 0, 0, 0 };
 task_t task_datalog = { (callback_t)datalog::update, 10000, 0, 0, 0 };
 task_t task_control = { (callback_t)control::update, 10000, 0, 0, 0 };
 
@@ -51,12 +51,15 @@ int main(void)
     .gps_pdop = NULL,
     .gps_n_sats = NULL,
   };
+
+  sleep_ms(2000);
   
   perif::init();
 
   print_compile_config();
   nav::init();
   datalog::init();
+  
   neopix_write(5, 5, 5);
 
   vehicle_state = state_nav_init;
@@ -79,7 +82,11 @@ int main(void)
     update_task(task_control);
     // gpio_put(25, 0);
     average_runtime = ((average_runtime*95)/100) + (((time_us_32()-t_start)*5)/100);
-    printf("%f, %f, %f, %f, %f, %f, %i\n", nav::position.x, nav::altitude, nav::velocity.x, nav::acceleration_i.x, nav::acceleration_b.x, nav::acceleration_i.x - nav::acceleration_b.x, average_runtime);
+    // printf("%f, %f, %f, %f, %f, %f, %i\n", nav::position.x, nav::altitude, nav::velocity.x, nav::acceleration_i.x, nav::acceleration_b.x, nav::acceleration_i.x - nav::acceleration_b.x, average_runtime);
+    printf("%f, %f, %f, %f\n", control::angle_error.y*180.f/PI, control::angle_error.z*180.f/PI, control::pid_ori_y.output, control::pid_ori_z.output);
+    // printf("%i, %i\n", perif::voltage_switch_raw, get_vehicle_state());
     sleep_us(10000-(time_us_32()-t_start));
+    //nav::rotation.euler_angles_x()*180.f/PI, nav::rotation.euler_angles_y()*180.f/PI, nav::rotation.euler_angles_z()*180.f/PI
+    //control::angle_error.y*180.f/PI, control::angle_error.z*180.f/PI
   }
 }
