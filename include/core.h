@@ -30,32 +30,41 @@
 // launch detect
 
 // acceleration that the rocket must feel to increase the acceleration counter when in launch detect mode
-constexpr static float launch_detect_accel_threshold = 12.f;
+const static float launch_detect_accel_threshold = 12.f;
 
 // number of acceleration readings over the acceleration threshold required to trigger launch detection
-constexpr static int launch_detect_accel_count = 10;
+const static int launch_detect_accel_count = 10;
 
 // burnout detect
 
 // acceleration that the rocket must be below to increase the acceleration counter when in burnout detect mode
-constexpr static float burnout_detect_accel_threshold = 2.f;
+const static float burnout_detect_accel_threshold = 2.f;
 
 // number of acceleration readings under the acceleration threshold required to trigger burnout detection
-constexpr static int burnout_detect_accel_count = 15;
+const static int burnout_detect_accel_count = 15;
 
 // apogee detect
 
 // velocity that the rocket must be below to detect apogee
-constexpr static float apogee_detect_vel_threshold = -2.f;
+const static float apogee_detect_vel_threshold = -2.f;
+
+// landing burn detect
+const static float landing_burn_detect_accel_threshold = 6.f;
+
+// deviation from 1g that rocket can feel to be landed
+const static float landing_detect_accel_threshold = 0.5f;
+
+// deviation from 0 rad/s that rocket can feel to be landed
+const static float landing_detect_ori_threshold = 0.02f;
 
 // ============================================================================
 // NAV settings
 
 // number of samples to take to determine gyroscope bias
-constexpr static uint16_t gyro_bias_count = 400;
+const static uint16_t gyro_bias_count = 1000;
 
 // number of samples to take to determine altitude offset
-constexpr static uint16_t baro_bias_count = 100;
+const static uint16_t baro_bias_count = 100;
 
 // ============================================================================
 // pyro settings
@@ -64,12 +73,19 @@ uint32_t pyro_1_fire_dur_us = 0;
 uint32_t pyro_2_fire_dur_us = 0;
 uint32_t pyro_3_fire_dur_us = 0;
 
-constexpr static bool pyro_1_en = false;
-constexpr static bool pyro_2_en = false;
-constexpr static bool pyro_3_en = false;
+const static bool pyro_1_en = false;
+const static bool pyro_2_en = false;
+const static bool pyro_3_en = false;
+
+// ============================================================================
+// internal communication bus settings
+
+#define spi_default_baud 2000000
 
 // ============================================================================
 // global flags and variables
+
+#define PI 3.14159265359
 
 namespace flags {
     
@@ -81,6 +97,11 @@ namespace flags {
         volatile bool time_over_burnout_threshold = false;
 
         volatile bool velocity_over_apogee_threshold = false;
+
+        volatile bool accel_over_landing_threshold = false;
+
+        volatile bool accel_within_landed_threshold = false;
+        volatile bool gyro_within_landed_threshold = false;
 
         uint8_t sts_bitmap = 0;
 
@@ -104,6 +125,15 @@ namespace flags {
         volatile bool kalman_y_converged = false;
         volatile bool kalman_z_converged = false;
 
+        volatile bool orientation_converged = false;
+
+    }
+
+    namespace control {
+
+        volatile bool start_landing_burn = false;
+        volatile bool burn_alt_over_safe_thresh = false;
+
     }
 
     namespace perif {
@@ -115,6 +145,31 @@ namespace flags {
         volatile bool pyro_has_power = false;
         volatile bool switch_sts = false;
 
+    }
+
+}
+
+namespace timing { 
+    
+    uint64_t MET = 0;
+    uint64_t T_launch = 0;
+    uint64_t T_landing = 0;
+    uint64_t T_landing_burn_start = 0;
+
+    void set_MET(uint64_t t) { MET = t; }
+    uint64_t get_MET() { return MET; }
+
+    void set_t_launch(uint64_t t) { T_launch = t; }
+    uint64_t get_t_launch() { return T_launch; }
+
+    void set_t_landing(uint64_t t) { T_landing = t; }
+    uint64_t get_t_landing() { return T_landing; }
+
+    void set_t_landing_burn_start(uint64_t t) { T_landing_burn_start = t; }
+    uint64_t get_t_landing_burn_start() { return T_landing_burn_start; }
+
+    void update() {
+        set_MET(time_us_64()-get_t_launch());
     }
 
 }
@@ -224,6 +279,7 @@ bool vehicle_has_control() {
     }
 }
 
+// ============================================================================
 // peripheral bus flags and config
 
 struct _port_t {
