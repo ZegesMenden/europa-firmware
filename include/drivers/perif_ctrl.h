@@ -191,7 +191,7 @@ namespace perif {
         gpio_set_function(pin_spi0_sdi, GPIO_FUNC_SPI);
         gpio_set_function(pin_spi0_sdo, GPIO_FUNC_SPI);
         
-        spi_init(spi0, 2000000);
+        spi_init(spi0, spi_default_baud);
 
         gpio_set_function(qwiic_port0.pin0, qwiic_port0.gpio_func);
         gpio_set_function(qwiic_port0.pin1, qwiic_port0.gpio_func);
