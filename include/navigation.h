@@ -522,6 +522,11 @@ namespace nav {
 
 			}
 
+			// if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {			
+			// 	kalman_y.update_posvel(0, 0);
+			// 	kalman_z.update_posvel(0, 0);
+			// }
+
 			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {
 
 				// if accel is within +- 6 degrees of current orientation, mark orientation as converged
