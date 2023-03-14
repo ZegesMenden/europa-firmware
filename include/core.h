@@ -134,6 +134,10 @@ namespace flags {
         volatile bool start_landing_burn = false;
         volatile bool burn_alt_over_safe_thresh = false;
 
+        volatile bool new_ascent_sim_result = false;
+        volatile bool new_landing_sim_result = false;
+        volatile bool new_divert_sim_result = false;
+
     }
 
     namespace perif {

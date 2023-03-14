@@ -3,6 +3,9 @@
 #include "navigation.h"
 #include "perif_ctrl.h"
 
+#include "drivers/core_interface.h"
+#include "simulation.h"
+
 #pragma once
 
 namespace control {
@@ -60,6 +63,12 @@ namespace control {
     vec3<float> tvc_position;
         
     float thrust;
+
+    float simulation_energy_est;
+    float simulation_work_est;
+    float simulation_position_est;
+    float simulation_velocity_est;
+    float simulation_time_est;
     
     const uint16_t servo_neutral = 1500;
 
@@ -157,17 +166,56 @@ namespace control {
             perif::servo_1_position = servo_neutral + servo_1_offset;
             perif::servo_2_position = servo_neutral + servo_2_offset;            
         }
+
+        /*
+        perif::servo_1_position = servo_neutral + servo_1_offset;
+        perif::servo_2_position = servo_neutral + servo_2_offset;
+        if ( ((time_us_32()/1000) % 1000) < 100 ) { perif::servo_1_position += 250; }
+        if ( ((time_us_32()/1000) % 1000) > 200 && ((time_us_32()/1000) % 1000) < 300 ) { perif::servo_1_position -= 250; }
+
+        if ( ((time_us_32()/1000) % 1000) > 550 && ((time_us_32()/1000) % 1000) < 650 ) { perif::servo_2_position += 250; }
+        if ( ((time_us_32()/1000) % 1000) > 750 && ((time_us_32()/1000) % 1000) < 850 ) { perif::servo_2_position -= 250; }
+        */
+
+        vec3<float> target_vector = vec3(1.0, 0.0, 0.0);
         
-        if ( vehicle_has_control() ) {
+        // ================================================================
+        // live simulation
 
-            vec3<float> target_vector = vec3(1.0, 0.0, 0.0);
-            
-            // ================================================================
-            // landing burn?
+        if ( get_vehicle_state() == state_powered_ascent || get_vehicle_state() == state_ascent_coast ) {
 
-            if ( get_vehicle_state() == state_descent_coast ) {
+            // process previous simulation if there is one
 
+            if ( flags::control::new_ascent_sim_result ) {
+                flags::control::new_ascent_sim_result = false;
+                
+                simulation_energy_est = simulation::ascent_sim_output.energy;
+                simulation_position_est = simulation::ascent_sim_output.position;
+                simulation_time_est = simulation::ascent_sim_output.time;
+
+                simulation_work_est = 0.0;
+                simulation_velocity_est = 0.0;
             }
+
+            // prepare new simulation
+
+            simulation::ascent_sim_input.mass = nav::mass;
+            simulation::ascent_sim_input.acceleration = nav::acceleration_l.len();
+            simulation::ascent_sim_input.position = nav::position.x;
+            simulation::ascent_sim_input.velocity = nav::velocity.x;
+            simulation::ascent_sim_input.time = float(timing::get_MET()) / 1000000.f;
+
+            multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_ASCENT_SIM_INPUT, 10);
+
+        }
+
+        if ( get_vehicle_state() == state_descent_coast || get_vehicle_state() == state_landing_start ) {
+
+            
+
+        }
+
+        if ( vehicle_has_control() ) {
 
             // ================================================================
             // position and velocity control
@@ -203,9 +251,8 @@ namespace control {
 
             perif::servo_1_position = clamp(perif::servo_1_position, servo_1_min, servo_1_max);
             perif::servo_2_position = clamp(perif::servo_2_position, servo_2_min, servo_2_max);            
-
+        
         }
-
     }
 
 };

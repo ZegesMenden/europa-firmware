@@ -9,6 +9,8 @@
 #include "hardware/gpio.h"
 #include "state_ctrl.h"
 #include "task.h"
+#include "drivers/core_interface.h"
+#include "simulation.h"
 // #include "drivers/softi2c.h"
 
 task_t task_nav = { (callback_t)nav::update, 10000, 0, 0, 0 };
@@ -61,6 +63,30 @@ int main(void)
   datalog::init();
   
   neopix_write(5, 5, 5);
+
+  core1_interface::core1_landing_sim_func = (core1_interface::callback_t)simulation::run_landing_sim;
+
+  multicore_launch_core1(core1_interface::core1_entry);
+  uint32_t fifo_rx = multicore_fifo_pop_blocking();
+  if ( fifo_rx != core1_interface::CORE1_INIT_SUCESS ) { printf("core1 failed to initialize!\n"); while(1) {;} }
+
+  printf("testing core1 landing sim...\n");
+
+  simulation::landing_sim_input.position = 14.25;
+  simulation::landing_sim_input.burn_alt = 9.24;
+  simulation::landing_sim_input.velocity = -4.25;
+  simulation::landing_sim_input.acceleration = 0.00276816608;
+  simulation::landing_sim_input.mass = 0.31;  
+  
+
+  uint32_t t_execution = time_us_32();
+  multicore_fifo_push_blocking(core1_interface::CORE0_NEW_LANDING_SIM_INPUT);
+
+  fifo_rx = multicore_fifo_pop_blocking();
+  t_execution = time_us_32() - t_execution;
+
+  printf("done!\nexecution took %iuS\n", t_execution);
+  printf("%f\n%f\n%f\n%f\n", simulation::landing_sim_output.position, simulation::landing_sim_output.velocity, simulation::landing_sim_output.time, simulation::landing_sim_output.work_done);
 
   vehicle_state = state_nav_init;
   update_task(task_nav);

@@ -37,6 +37,7 @@ pico_enable_stdio_uart(europa_test 0)
 target_link_libraries(europa_test
 
                       pico_stdlib
+                      pico_multicore
                       hardware_spi
                       hardware_i2c
                       hardware_adc
