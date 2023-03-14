@@ -3,7 +3,6 @@
 // ================================================
 #pragma once
 #include <hardware/spi.h>
-#include <hardware/spi.h>
 #include <hardware/dma.h>
 #include <hardware/gpio.h>
 
@@ -56,7 +55,7 @@ bool get_jdec(uint cs, uint8_t *b1, uint8_t *b2, uint8_t *b3) {
 
 }
 
-bool flash_write_page(int cs, uint16_t page_number, uint8_t *buf) {
+bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
 	while(flash_busy(cs)) {;}
 
@@ -69,20 +68,25 @@ bool flash_write_page(int cs, uint16_t page_number, uint8_t *buf) {
 	gpio_put(cs, 0);
 
 	flash_send_byte(page_program);
+	flash_send_byte(0);
 	flash_send_byte((page_number>>8) & 0xff);
 	flash_send_byte(page_number & 0xff);
-	flash_send_byte(0);
 		
-	spi_write_blocking(spi0, buf, 256);
+	int err = spi_write_blocking(spi0, buf, 256);
+
+	gpio_put(cs, 1);
+	gpio_put(cs, 0);
+	
+	flash_send_byte(write_disable);
 
 	gpio_put(cs, 1);
 
-	return 1;
+	return err > 1 ? 1 : 0;
 
 }
 
 // poggers DMA??
-bool flash_dma_write_page(int cs, uint16_t page_number, uint8_t *buf) {
+bool flash_dma_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
 	while(flash_busy(cs)) {;}
 
@@ -127,17 +131,17 @@ bool flash_dma_write_page(int cs, uint16_t page_number, uint8_t *buf) {
 
 }
 
-bool flash_read_page(int cs, uint16_t page_number, uint8_t *buf) {
+bool flash_read_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
-  while(flash_busy(cs)) {;}
+  	while(flash_busy(cs)) {;}
 
 	gpio_put(cs, 1);
 	gpio_put(cs, 0);
 
 	flash_send_byte(read_data);
+	flash_send_byte(0);
 	flash_send_byte((page_number>>8) & 0xff);
 	flash_send_byte(page_number & 0xff);
-	flash_send_byte(0);
 
 	int err = spi_read_blocking(spi0, 0, buf, 256);
 
@@ -147,9 +151,10 @@ bool flash_read_page(int cs, uint16_t page_number, uint8_t *buf) {
 
 }
 
-bool flash_erase_chip(int cs) {
+bool flash_erase_chip(uint cs) {
 
-	if ( flash_busy(cs) ) {return 0;}
+	// if ( flash_busy(cs) ) {return 0;}
+	while(flash_busy(cs)) {;}
 
 	gpio_put(cs, 1);
 	gpio_put(cs, 0);

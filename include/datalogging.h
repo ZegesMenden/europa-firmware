@@ -100,13 +100,21 @@ namespace datalog {
 
     uint16_t find_flash_start() {
 
+        bool last_page_was_valid = 0;
+        uint8_t read_buf[256];
+        for ( int i = 0; i < 256; i++ ) { read_buf[i] = 0; }
+
         for ( int i = 0; i < 15625; i++ ) {
-            uint8_t read_buf[256] = {0};
-            flash_read_page(pin_cs_flash, i, read_buf);
+
+            while(flash_busy(pin_cs_flash)) { ; }
+            if (!flash_read_page(pin_cs_flash, i, read_buf) ) { return 15624; }
+
+            page = i;
             if ( read_buf[0] == 0xff ) { 
-                flash_read_page(pin_cs_flash, i++, read_buf);
-                if ( read_buf[0] == 0xff ) { break; } // if the next page is also 
+                if ( last_page_was_valid ) { return i; }
+                last_page_was_valid = true;
             }
+            
         }
 
         return page;
@@ -149,7 +157,7 @@ namespace datalog {
         data.points.gps_pdop            = *ptrs.points.gps_pdop;
         data.points.gps_n_sats          = *ptrs.points.gps_n_sats;
 
-        spi_set_baudrate(spi0, 8000000);
+        spi_set_baudrate(spi0, 6000000);
         flash_write_page(pin_cs_flash, page, data.raw);
         spi_set_baudrate(spi0, spi_default_baud);
 
@@ -159,25 +167,20 @@ namespace datalog {
 
     bool init() {
 
-        uint8_t a, b, c;
+        uint8_t a = 0;
+        uint8_t b = 0;
+        uint8_t c = 0;
         get_jdec(pin_cs_flash, &a, &b, &c);
 
         // if ( a == b == c == 0 ) { return 0; }
 
         printf("============================================================================\n");
         printf("locating flash start page...\n");
-        
+
         spi_set_baudrate(spi0, 8000000);
-        while(flash_busy(pin_cs_flash)) { ; }
-        flash_erase_chip(pin_cs_flash);
-        for ( int i = 0; i < 2000; i++ ) {
-            uint8_t b[256] = {0x69};
-            while(flash_busy(pin_cs_flash)) { ; }
-            flash_write_page(pin_cs_flash, i, b);
-        }
         find_flash_start();
 
-        printf("start page: %i\nremaining pages: %i (%f% / %fs)\n", page, (15625-page), 100.f*(float(page)/float(15625-page)), float(15625-page)/100.f);
+        printf("start page: %i\nremaining pages: %i (%f%c / %fs)\n", page, (15625-page), 100.f*(float(page)/float(15625-page)), '%', float(15625-page)/100.f);
         printf("flash storage: [");
         for ( int i = 0; i < 20; i++ ) {
             if ( i*5 < (100.f*(float(page)/float(15625-page))) ) { printf("="); }
