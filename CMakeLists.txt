@@ -40,6 +40,7 @@ target_link_libraries(europa_test
                       pico_multicore
                       hardware_spi
                       hardware_i2c
+                      hardware_irq
                       hardware_adc
                       hardware_pio
                       hardware_pwm
