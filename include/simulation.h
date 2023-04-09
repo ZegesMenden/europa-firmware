@@ -1,6 +1,6 @@
 #include "core.h"
 #include "pico/multicore.h"
-#include "drivers/core_interface.h"
+
 #pragma once
 
 namespace simulation {
@@ -46,9 +46,12 @@ namespace simulation {
         float energy;
         float time;
         float position;
+        uint32_t time_taken;
     } ascent_sim_output;
 
     void run_ascent_sim() {
+
+        uint64_t t_start = time_us_64();
 
         float pos = ascent_sim_input.position;
         float vel = ascent_sim_input.velocity;
@@ -61,7 +64,7 @@ namespace simulation {
 
         float dt = 0.01f;
 
-        while ( time < 8.0f && pos > 0.0f ) {
+        while ( time < 8.0f && pos > -1.0f ) {
 
             float force = -aero_coeff*vel*vel;
             force += c6_thrust[clamp(int((time)*100.f), 0, 199)];
@@ -76,6 +79,7 @@ namespace simulation {
         ascent_sim_output.position = pos;
         ascent_sim_output.energy = vel*vel*0.5*mass + mass*pos*9.816;
         ascent_sim_output.time = time;
+        ascent_sim_output.time_taken = uint32_t(time_us_64() - t_start);
 
     }
 
@@ -95,9 +99,12 @@ namespace simulation {
         float velocity;
         float work_done;
         float time;
+        uint32_t time_taken;
     } landing_sim_output;
 
     void run_landing_sim() {
+
+        uint64_t t_start = time_us_64();
 
         float pos = landing_sim_input.position;
         float vel = landing_sim_input.velocity;
@@ -137,9 +144,70 @@ namespace simulation {
         landing_sim_output.velocity = vel;
         landing_sim_output.time = time;
         landing_sim_output.work_done = work;
+        landing_sim_output.time_taken = uint32_t(time_us_64() - t_start);
+
     }
 
     // ============================================================
     // divert simulation
+
+    struct divert_sim_input {
+        float position;
+        float velocity;
+        float acceleration;
+        float mass;
+        float time_since_burn_start;
+        float ang_coeff;
+    } divert_sim_input;
+
+    struct divert_sim_output {
+        float position;
+        float velocity;
+        float work_done;
+        float time;
+        uint32_t time_taken;
+    } divert_sim_output;
+
+    void run_divert_sim() {
+
+        uint64_t t_start = time_us_64();
+
+        float pos = divert_sim_input.position;
+        float vel = divert_sim_input.velocity;
+        float acc = divert_sim_input.acceleration;
+        float mass = divert_sim_input.mass;
+        float time = divert_sim_input.time_since_burn_start;
+        float angle_coeff = divert_sim_input.ang_coeff;
+        float work = 0.0f;
+
+        float aero_coeff = 0.0f;
+        if ( vel != 0.0 ) { aero_coeff = (mass*acc)/(vel*vel); }
+
+        float dt = 0.01f;
+        float time_burn_start = 0.0f;
+
+        while ( time < 2.0f && pos > 0.0f ) {
+
+            float force = c6_thrust[clamp(int((time)*100.f), 0, 199)]*angle_coeff;
+            force += aero_coeff*vel*vel;
+
+            vel += (-9.816 + (force / mass)) * 0.01;
+
+            float vdt = vel * 0.01;
+
+            work += force * vdt;
+            pos += vdt;
+
+            time += dt;
+
+        }
+
+        divert_sim_output.position = pos;
+        divert_sim_output.velocity = vel;
+        divert_sim_output.time = time;
+        divert_sim_output.work_done = work;
+        divert_sim_output.time_taken = uint32_t(time_us_64() - t_start);
+
+    }
 
 }

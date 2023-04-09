@@ -61,6 +61,7 @@ namespace control {
 
     vec3<float> desired_torque;
     vec3<float> tvc_position;
+    vec3<float> tvc_lever = vec3(0.04, 0.0, 0.0);
         
     float thrust;
 
@@ -72,17 +73,17 @@ namespace control {
     
     const uint16_t servo_neutral = 1500;
 
-    uint16_t servo_1_offset = 75;
-    uint16_t servo_2_offset = 50;
+    int16_t servo_1_offset = -75;
+    int16_t servo_2_offset = -75;
 
-    uint16_t servo_1_min = 1300;
-    uint16_t servo_1_max = 1700;
+    uint16_t servo_1_min = 1250;
+    uint16_t servo_1_max = 1650;
 
-    uint16_t servo_2_min = 1300;
-    uint16_t servo_2_max = 1700;
+    uint16_t servo_2_min = 1225;
+    uint16_t servo_2_max = 1625;
 
-    pid pid_ori_y(0.6*(180.f/PI), 0.0, 0.2*(180.f/PI), 0.0);
-    pid pid_ori_z(0.6*(180.f/PI), 0.0, 0.2*(180.f/PI), 0.0);
+    pid pid_ori_y(0.3*180.f/PI, 0.0, 0.05*180.f/PI, 0.0);
+    pid pid_ori_z(0.3*180.f/PI, 0.0, 0.05*180.f/PI, 0.0);
 
     namespace gfield {
 
@@ -95,10 +96,26 @@ namespace control {
         float burn_time = 0;
 
         float average_thrust = 5;
+        float target_landing_alt = 0.25;
 
         float alt_to_start_burn = 0;
 
+        vec3<float> target_orientation;
+        float desired_force = 0;
+
+        // percentage of the current thrust that would result in an ideal landing
+        float desired_force_coefficient = 0;
+
+        // angle to obtain desired force
+        float desired_divert_vertical_ang = 0;
+
+        // angle of horizontal course over the ground
+        float lateral_course_ang = 0;
+
         void update() {
+
+            // =========================================================
+            // update burn alt
 
             float drag_est = 0.5*nav::acceleration_l.len();
 
@@ -140,6 +157,33 @@ namespace control {
                 if ( nav::position.x + nav::velocity.x*0.005 < alt_to_start_burn ) { flags::control::start_landing_burn = true; }
 
             }
+
+            // =========================================================
+            // update landing burn guidance
+
+            if ( time_us_64() > timing::get_t_landing_burn_start() ) {
+
+                // F = W/D
+                desired_force = energy / ( nav::position.x - target_landing_alt );
+                desired_force = clamp(desired_force, 0.f, 20.f);
+
+                desired_force_coefficient = desired_force/(nav::acceleration_l.len()*nav::mass);
+
+                // clamp to 0-25 degrees
+                desired_force_coefficient = clamp(desired_force_coefficient, 0.9f, 1.0f);
+                
+                desired_divert_vertical_ang = acosf(desired_force_coefficient);
+                // desired_divert_vertical_ang = 1.57079632679f-desired_force_coefficient;
+
+                float horizontal_magnitude = sinf(desired_divert_vertical_ang);
+
+                // float vertical_magnitude = cosf(desired_divert_vertical_ang);
+                float vertical_magnitude = desired_divert_vertical_ang;
+
+
+
+            }
+
         }
     }
 
@@ -168,6 +212,8 @@ namespace control {
         }
 
         /*
+
+        // servo sweep code
         perif::servo_1_position = servo_neutral + servo_1_offset;
         perif::servo_2_position = servo_neutral + servo_2_offset;
         if ( ((time_us_32()/1000) % 1000) < 100 ) { perif::servo_1_position += 250; }
@@ -175,6 +221,7 @@ namespace control {
 
         if ( ((time_us_32()/1000) % 1000) > 550 && ((time_us_32()/1000) % 1000) < 650 ) { perif::servo_2_position += 250; }
         if ( ((time_us_32()/1000) % 1000) > 750 && ((time_us_32()/1000) % 1000) < 850 ) { perif::servo_2_position -= 250; }
+        
         */
 
         vec3<float> target_vector = vec3(1.0, 0.0, 0.0);
@@ -211,24 +258,46 @@ namespace control {
 
         if ( get_vehicle_state() == state_descent_coast || get_vehicle_state() == state_landing_start ) {
 
-            
+            // process previous simulation if there is one
+
+            if ( flags::control::new_landing_sim_result ) {
+                flags::control::new_landing_sim_result = false;
+                
+                simulation_work_est = simulation::landing_sim_output.work_done;
+                simulation_position_est = simulation::landing_sim_output.position;
+                simulation_velocity_est = simulation::landing_sim_output.velocity;
+                simulation_time_est = simulation::landing_sim_output.time + float(timing::get_MET()) / 1000000.f;
+
+                simulation_energy_est = 0.0;
+            }
+
+            // prepare new simulation
+
+            simulation::landing_sim_input.mass = nav::mass;
+            simulation::landing_sim_input.acceleration = nav::acceleration_l.len();
+            simulation::landing_sim_input.position = nav::position.x;
+            simulation::landing_sim_input.velocity = nav::velocity.x;
+            simulation::landing_sim_input.burn_alt = gfield::burn_alt;
+
+            multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_LANDING_SIM_INPUT, 10);
 
         }
 
-        if ( vehicle_has_control() ) {
+        // if ( vehicle_has_control() ) {
+
+            // ================================================================
+            // thrust estimation
+
+            // TODO:
+            // drag estimation ?
+
+            thrust = (nav::acceleration_l.len()*nav::mass);
 
             // ================================================================
             // position and velocity control
 
             if ( control_mode == ctrl_vel ) {
 
-                target_vector = vec3(abs(nav::velocity.x), -nav::velocity.y, -nav::velocity.z)*0.25;
-
-                // clamp output to +- 15 degrees
-                target_vector /= target_vector.x;
-                target_vector.y = clamp(target_vector.y, -0.268f, 0.268f);
-                target_vector.z = clamp(target_vector.z, -0.268f, 0.268f);
-                
             }
 
             // ================================================================
@@ -238,21 +307,36 @@ namespace control {
             angle_error.y = atan2f(-target_vector.z, target_vector.x);
             angle_error.z = atan2f(target_vector.y, target_vector.x);
 
-            pid_ori_y.updateWithDerivative(angle_error.y, nav::rotational_velocity.y, 0.01);
-            pid_ori_z.updateWithDerivative(angle_error.z, nav::rotational_velocity.z, 0.01);
-            
-            perif::servo_1_position = uint16_t( -pid_ori_y.output * 5.555555556f + \
-                                                servo_1_offset + \
-                                                servo_neutral);
+            pid_ori_y.updateWithDerivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
+            pid_ori_z.updateWithDerivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
 
-            perif::servo_2_position = uint16_t( -pid_ori_z.output * 5.555555556f + \
-                                                servo_2_offset + \
-                                                servo_neutral);
+            float servo_position_y = 0.0;
+            float servo_position_z = 0.0;
+
+            // cant divide by thrust if it's zero
+            if ( thrust > 0.1 ) {
+
+                servo_position_y = (-pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x);
+                servo_position_z = (-pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x);
+            
+            } else if ( get_vehicle_state() == state_landing_start ) {
+            
+                // calculate angle for the peak thrust of the landing burn
+                servo_position_y = (pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x);
+                servo_position_z = (pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x);
+            
+            }    
+
+            servo_position_y = pid_ori_y.output;
+            servo_position_z = pid_ori_z.output;
+            
+            perif::servo_1_position = uint16_t( (servo_position_z * 37.5f) + servo_1_offset + servo_neutral);
+            perif::servo_2_position = uint16_t( (servo_position_y * 37.5f) + servo_2_offset + servo_neutral);
 
             perif::servo_1_position = clamp(perif::servo_1_position, servo_1_min, servo_1_max);
             perif::servo_2_position = clamp(perif::servo_2_position, servo_2_min, servo_2_max);            
         
-        }
+        // }
     }
 
 };

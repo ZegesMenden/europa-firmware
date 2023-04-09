@@ -75,6 +75,7 @@ namespace core1_interface {
     }
 
     bool init() {
+        
         multicore_launch_core1(core1_interface::core1_entry);
         uint32_t fifo_rx = multicore_fifo_pop_blocking();
         if ( fifo_rx != core1_interface::CORE1_INIT_SUCESS ) { printf("core1 failed to initialize!\n"); return 0;}

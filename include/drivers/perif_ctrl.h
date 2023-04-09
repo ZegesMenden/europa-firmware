@@ -47,11 +47,15 @@ namespace perif {
     uint8_t buzzer_timing_idx = 0;
     uint8_t buzzer_timing_freq = 0;
         
-    uint16_t servo_1_position = 1500;
-    uint16_t servo_2_position = 1500;
+    uint16_t servo_1_position = 1425;
+    uint16_t servo_2_position = 1425;
     
     bool pyro_1_fire_condition() {
         
+        if ( get_vehicle_state() == state_descent_coast || get_vehicle_state() == state_landing_start ) {
+            if ( flags::control::start_landing_burn ) { return 1; }
+        }
+
         return 0;
     }
 

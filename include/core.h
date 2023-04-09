@@ -21,6 +21,12 @@
 // enable telemetry
 #define TELEMETRY_EN
 
+// use radio instead of usb serial
+#define USE_RADIO
+
+// enable gps integration to the kalman filter
+#define USE_GPS
+
 // simulate flight (SITL)
 // #define SITL
 
@@ -46,7 +52,7 @@ const static int burnout_detect_accel_count = 15;
 // apogee detect
 
 // velocity that the rocket must be below to detect apogee
-const static float apogee_detect_vel_threshold = -2.f;
+const static float apogee_detect_vel_threshold = 0.0f;
 
 // landing burn detect
 const static float landing_burn_detect_accel_threshold = 6.f;
@@ -61,7 +67,7 @@ const static float landing_detect_ori_threshold = 0.02f;
 // NAV settings
 
 // number of samples to take to determine gyroscope bias
-const static uint16_t gyro_bias_count = 1000;
+const static uint16_t gyro_bias_count = 2000;
 
 // number of samples to take to determine altitude offset
 const static uint16_t baro_bias_count = 100;
@@ -155,10 +161,14 @@ namespace flags {
 
 namespace timing { 
     
+    uint64_t RUNTIME = 0;
     uint64_t MET = 0;
     uint64_t T_launch = 0;
     uint64_t T_landing = 0;
     uint64_t T_landing_burn_start = 0;
+
+    uint32_t total_runtime = 0;
+    uint32_t average_runtime = 0;
 
     void set_MET(uint64_t t) { MET = t; }
     uint64_t get_MET() { return MET; }
@@ -173,7 +183,12 @@ namespace timing {
     uint64_t get_t_landing_burn_start() { return T_landing_burn_start; }
 
     void update() {
-        set_MET(time_us_64()-get_t_launch());
+
+        RUNTIME = time_us_64();
+
+        if ( get_t_launch() > 0 ) { set_MET(time_us_64()-get_t_launch()); }
+        if ( get_t_landing_burn_start() > 0 ) { set_t_landing_burn_start(time_us_64()-get_t_landing_burn_start()); }
+
     }
 
 }
@@ -393,4 +408,4 @@ void print_compile_config() {
 }
 
 #define boot_warning(message) printf("[WARNING] from function %s:\n%s\n", __FUNCTION__, message)
-#define boot_panic(message) printf("[ERROR] from function %s:\n%s\n", __FUNCTION__, message); flags::boot::boot_fail = true;
+#define boot_panic(message) printf("[ERROR] from function %s:\n%s\n", __FUNCTION__, message); flags::boot::boot_fail = true

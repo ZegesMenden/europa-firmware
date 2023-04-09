@@ -11,6 +11,9 @@
 #include "task.h"
 #include "drivers/core_interface.h"
 #include "simulation.h"
+#include "telemetry.h"
+#include "drivers/radio.h"
+#include "gps.h"
 // #include "drivers/softi2c.h"
 
 task_t task_nav = { (callback_t)nav::update, 10000, 0, 0, 0 };
@@ -18,17 +21,21 @@ task_t task_perif = { (callback_t)perif::update, 10000, 0, 0, 0 };
 task_t task_state = { (callback_t)state::update, 10000, 0, 0, 0 };
 task_t task_datalog = { (callback_t)datalog::update, 10000, 0, 0, 0 };
 task_t task_control = { (callback_t)control::update, 10000, 0, 0, 0 };
-
+task_t task_telemetry = { (callback_t)telemetry::update, 10000, 0, 0, 0 };
+task_t task_radio = { (callback_t)radio::update, 10000, 0, 0, 0 };
+task_t task_gps = { (callback_t)gps::update, 10000, 0, 0, 0 };
 
 int main(void)
 { 
   stdio_init_all();
 
   datalog::ptrs.points = {
+
     .state = &vehicle_state,
-    .time = NULL,
+    .time = &timing::RUNTIME,
     .flag_gpio = &flags::perif::gpio_sts,
     .flag_state = &flags::state::sts_bitmap,
+    .active_state_timer = &state::current_state_timer,
     .voltage_batt = &perif::voltage_batt_raw,
     .voltage_pyro = &perif::voltage_pyro_raw,
         
@@ -46,73 +53,83 @@ int main(void)
 
     .mag = &nav::raw::mag,
     
-    .gps_latitude = NULL,
-    .gps_longitude = NULL,
-    .gps_accuracy_h = NULL,
-    .gps_accuracy_v = NULL,
-    .gps_pdop = NULL,
-    .gps_n_sats = NULL,
+    .burn_alt                = &control::gfield::burn_alt,
+    .comp                    = &control::gfield::comp,
+    .simulation_energy_est   = &control::simulation_energy_est,
+    .simulation_work_est     = &control::simulation_work_est,
+    .simulation_position_est = &control::simulation_position_est,
+    .simulation_velocity_est = &control::simulation_velocity_est,
+    .simulation_time_est     = &control::simulation_time_est
+
   };
 
   sleep_ms(2000);
   
-  perif::init();
-
   print_compile_config();
+  perif::init();
   nav::init();
   datalog::init();
+  telemetry::init();
+  gps::init();
+  radio::init();
   
   neopix_write(5, 5, 5);
 
+  // uart_init(uart1, 115200);
+  // while(1) {
+  //   if ( uart_is_readable(uart1) ) {
+  //     uint8_t c;
+  //     uart_read_blocking(uart1, &c, 1);
+  //     // printf("%c", c);
+  //     uart_write_blocking(uart0, &c, 1);
+  //   }
+  //   // int c;
+  //   // c = getchar_timeout_us(1);
+  //   // uint8_t _c = c;
+  //   // if ( c != PICO_ERROR_TIMEOUT ) { uart_write_blocking(uart1, &_c, 1); }
+  // }
+
   core1_interface::core1_landing_sim_func = (core1_interface::callback_t)simulation::run_landing_sim;
-
-  multicore_launch_core1(core1_interface::core1_entry);
-  uint32_t fifo_rx = multicore_fifo_pop_blocking();
-  if ( fifo_rx != core1_interface::CORE1_INIT_SUCESS ) { printf("core1 failed to initialize!\n"); while(1) {;} }
-
-  printf("testing core1 landing sim...\n");
-
-  simulation::landing_sim_input.position = 14.25;
-  simulation::landing_sim_input.burn_alt = 9.24;
-  simulation::landing_sim_input.velocity = -4.25;
-  simulation::landing_sim_input.acceleration = 0.00276816608;
-  simulation::landing_sim_input.mass = 0.31;  
-  
-
-  uint32_t t_execution = time_us_32();
-  multicore_fifo_push_blocking(core1_interface::CORE0_NEW_LANDING_SIM_INPUT);
-
-  fifo_rx = multicore_fifo_pop_blocking();
-  t_execution = time_us_32() - t_execution;
-
-  printf("done!\nexecution took %iuS\n", t_execution);
-  printf("%f\n%f\n%f\n%f\n", simulation::landing_sim_output.position, simulation::landing_sim_output.velocity, simulation::landing_sim_output.time, simulation::landing_sim_output.work_done);
+  core1_interface::core1_ascent_sim_func = (core1_interface::callback_t)simulation::run_ascent_sim;
+  core1_interface::core1_divert_sim_func = (core1_interface::callback_t)simulation::run_divert_sim;
+  core1_interface::init();
 
   vehicle_state = state_nav_init;
+  timing::update();
   update_task(task_nav);
+  update_task(task_state);
+  update_task(task_control);
   update_task(task_perif);
   update_task(task_datalog);
-  update_task(task_state);
-  uint32_t n_avaerages = 1;
-  uint32_t average_runtime = task_nav.average_runtime+task_perif.average_runtime+task_datalog.average_runtime+task_control.average_runtime;
-  // gpio_init(25);
-  // gpio_set_dir(25, 1);
+  update_task(task_telemetry);
+  timing::average_runtime = task_nav.average_runtime+task_perif.average_runtime+task_datalog.average_runtime+task_control.average_runtime;
+
+  bool data_has_been_logged = false;
 
   while(1) {
-    uint32_t t_start = time_us_32();
-    // gpio_put(25, 1);
+    uint64_t t_start = time_us_64();
+    timing::update();
     update_task(task_nav);
-    update_task(task_perif);
-    update_task(task_datalog);
     update_task(task_state);
     update_task(task_control);
-    // gpio_put(25, 0);
-    average_runtime = ((average_runtime*95)/100) + (((time_us_32()-t_start)*5)/100);
-    // printf("%f, %f, %f, %f, %f, %f, %i\n", nav::position.x, nav::altitude, nav::velocity.x, nav::acceleration_i.x, nav::acceleration_b.x, nav::acceleration_i.x - nav::acceleration_b.x, average_runtime);
-    printf("%f, %f, %f, %f\n", control::angle_error.y*180.f/PI, control::angle_error.z*180.f/PI, control::pid_ori_y.output, control::pid_ori_z.output);
-    // printf("%i, %i\n", perif::voltage_switch_raw, get_vehicle_state());
-    sleep_us(10000-(time_us_32()-t_start));
-    //nav::rotation.euler_angles_x()*180.f/PI, nav::rotation.euler_angles_y()*180.f/PI, nav::rotation.euler_angles_z()*180.f/PI
-    //control::angle_error.y*180.f/PI, control::angle_error.z*180.f/PI
+    update_task(task_perif);
+    update_task(task_datalog);
+    update_task(task_telemetry);
+    update_task(task_radio);
+    update_task(task_gps);
+
+    // if ( ((datalog::page - datalog::start_page) > 500) && !data_has_been_logged ) {
+    //   datalog::export_flash_data(datalog::start_page);
+    //   data_has_been_logged = true;
+    // }
+    
+    timing::average_runtime = time_us_64()-t_start;//((timing::average_runtime*80)/100) + (((time_us_64()-t_start)*20)/100);
+
+    // printf("%i, %f, %f, %f, %f, %f, %f, %i\n", get_vehicle_state(), nav::position.x, nav::altitude, nav::velocity.x, nav::acceleration_i.x, nav::acceleration_b.x, nav::acceleration_i.x - nav::acceleration_b.x, average_runtime);
+    
+    // printf("%f,%f,%f,%f,%i,%i\n", control::angle_error.y*180.f/3.1415f, control::angle_error.z*180.f/3.1415f, -control::pid_ori_y.output, -control::pid_ori_z.output, perif::servo_1_position, perif::servo_2_position);
+
+    int t_sleep = 10000-(time_us_64()-t_start);
+    if ( t_sleep > 0 ) { sleep_us(t_sleep); }
   }
 }

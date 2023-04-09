@@ -21,6 +21,7 @@ void update_task(task_t &task) {
         task.last_run = time_us_64();
         task.n_runs++;
         task.average_runtime = (task.last_run-t_start);
+        
     // }
 
 }
