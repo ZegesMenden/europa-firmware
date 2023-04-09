@@ -165,7 +165,7 @@ public:
      * @brief Divides two vectors
      * @return quotient of the two vectors
      */
-    const vec3 operator/(const vec3& v) const { return vec3(*this) /= v; }
+    const vec3 operator/(const vec3& v) const { return vec3(this->x/v.x, this->y/v.y, this->z/v.z); }
 
     /**
      * @brief Divides the left handed vector by a scalar
@@ -206,7 +206,7 @@ public:
      * @brief Returns the length of the vector
      * @return length of the vector
      */
-    inline T len() { return(sqrtf(x * x + y * y + z * z)); };
+    inline T len() { if(x == y == z == 0) { return 0; } return(sqrtf(x * x + y * y + z * z)); };
 
     /**
      * @brief Returns the cross product of the left and right hand vectors
