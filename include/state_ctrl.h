@@ -39,8 +39,8 @@ namespace state {
             }
 
             case (state_nav_init) : {
-                set_vehicle_state(state_launch_idle);
-                if ( flags::nav::baro_debiased && flags::nav::gyro_debiased && flags::nav::orientation_converged ) {
+
+                if ( flags::nav::baro_debiased && flags::nav::gyro_debiased ) {
                     set_vehicle_state(state_launch_idle);
                 }
 
