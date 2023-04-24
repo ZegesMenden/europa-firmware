@@ -1,8 +1,9 @@
 #include "core.h"
 #include "drivers/flash.h"
+#include "control.h"
+#include "state_ctrl.h"
+#include "radio.h"
 #pragma once
-
-
 
 namespace datalog {
 
@@ -13,6 +14,8 @@ namespace datalog {
         log_t() {};
 
         struct points {
+            
+            uint8_t padding;
 
             system_state_t state;
             uint64_t time;
@@ -46,11 +49,13 @@ namespace datalog {
             float simulation_velocity_est;
             float simulation_time_est;
 
+            uint8_t extra[129];
+
         } points;
 
         uint8_t raw[256];
 
-        static_assert(sizeof(points) <= sizeof(raw));
+        static_assert(sizeof(points) == sizeof(raw));
 
     } log_t;
 
@@ -97,31 +102,34 @@ namespace datalog {
 
     #pragma pop()
 
+    uint8_t log_timing_idx = 0;
+
     uint16_t start_page = 0;
     uint16_t page = 0;
+    uint16_t export_page = 0;
+
     uint8_t flash_errors = 0;
+
     log_ptrs_t ptrs;
     log_t data;
-    uint8_t log_idx = 0;
 
     uint16_t find_flash_start() {
 
         #ifdef DATALOG_EN
 
         bool last_page_was_valid = 0;
-        uint8_t read_buf[256];
-        for ( int i = 0; i < 256; i++ ) { read_buf[i] = 0; }
+        uint8_t read_buf;
 
-        spi_set_baudrate(spi0, 8000000);
+        spi_set_baudrate(spi0, spi_flash_baud);
 
         for ( int i = 0; i < 15625; i++ ) {
             
             while(flash_busy(pin_cs_flash)) { ; }
-            if (!flash_read_page(pin_cs_flash, i, read_buf) ) { return -1; }
+            if (!flash_read_bytes(pin_cs_flash, i, &read_buf, 1) ) { return -1; }
 
             page = i;
             start_page = i;
-            if ( read_buf[0] == 0xff ) { 
+            if ( read_buf == 0xff ) { 
                 if ( last_page_was_valid ) { return i; }
                 last_page_was_valid = true;
             }
@@ -179,31 +187,38 @@ namespace datalog {
         data.points.simulation_velocity_est = *ptrs.points.simulation_velocity_est;
         data.points.simulation_time_est     = *ptrs.points.simulation_time_est;
 
-        spi_set_baudrate(spi0, 6000000);
-        flash_write_page(pin_cs_flash, page++, data.raw);
+        page++;
+        spi_set_baudrate(spi0, spi_flash_baud);
+        while(flash_busy(pin_cs_flash)) { ; }
+        if ( !flash_write_page(pin_cs_flash, page, data.raw) ) { flash_errors++; }
         spi_set_baudrate(spi0, spi_default_baud);
 
         #endif
 
     }
 
-    uint8_t *get_flash_tx_buf() { return data.raw; }
+    uint8_t *get_flash_tx_buf() { return (uint8_t*)&data; }
 
     bool init() {
         #ifdef DATALOG_EN
+
         uint8_t a = 0;
         uint8_t b = 0;
         uint8_t c = 0;
         get_jdec(pin_cs_flash, &a, &b, &c);
 
-        // if ( a == b == c == 0 ) { return 0; }
+        printf("%i, %i, %i\n", a, b, c);
+
+        if ( (a == 0) && (b == 0) && (c == 0) ) { boot_panic("no flash chip found!\n"); return 0; }
 
         printf("============================================================================\n");
         printf("locating flash start page...\n");
 
-        spi_set_baudrate(spi0, 8000000);      
-        flash_erase_chip(pin_cs_flash);
-        while(flash_busy(pin_cs_flash)) {;}
+        spi_set_baudrate(spi0, spi_flash_baud);     
+
+        // flash_erase_chip(pin_cs_flash);
+        // while(flash_busy(pin_cs_flash)) {;}
+        
         find_flash_start();
 
         printf("start page: %i\nremaining pages: %i (%.1f%c / %.1fs)\n", page, (15625-page), 100.f*(float(page)/float(15625)), '%', float(15625-page)/100.f);
@@ -221,84 +236,15 @@ namespace datalog {
         return 1;
     }
 
-    void update() {
+    void export_flash_data_blocking() {
         #ifdef DATALOG_EN
-        switch(get_vehicle_state()) {
-            case(state_boot): { 
-                break;
-            }
-            case(state_idle): { 
-                break;
-            }
-            case(state_nav_init): { 
-                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_launch_idle): { 
-                if ( ++log_idx >= 10 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_launch_detect): { 
-                if ( ++log_idx >= 2 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_powered_ascent): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_ascent_coast): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_descent_coast): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_landing_start): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_landing_guidance): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_landing_terminal): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            case(state_landed): { 
-                if ( ++log_idx >= 2 ) {
 
-                    // only log for 5 seconds after landing
-                    if ( time_us_64() < timing::get_t_landing()+5000000 ) { log_flash_data(); }
-                    log_idx = 0;
-
-                }
-                break;
-            }
-            case(state_abort): { 
-                if ( ++log_idx >= 1 ) { log_flash_data(); log_idx = 0; }
-                break;
-            }
-            default: { 
-                
-                break;
-            }
-        }
-        #endif
-    }
-
-    void export_flash_data(uint16_t page_start) {
-        #ifdef DATALOG_EN
         printf("FLASHDATA\n");
+        printf("nlines%i\n", page-start_page);
 
-        printf("nlines%i\n", page-page_start);
+        for ( int i = start_page; i < page; i++ ) {
 
-        for ( int i = page_start; i < page; i++ ) {
-
-            flash_read_page(pin_cs_flash, i, data.raw);
-
-            uint8_t checksum = 0;
+            flash_read_page(pin_cs_flash, i, (uint8_t*)&data);
 
             printf("%i,", data.points.state);
             printf("%i,", data.points.time);
@@ -328,7 +274,182 @@ namespace datalog {
             printf("%f,", data.points.simulation_position_est);
             printf("%f,", data.points.simulation_velocity_est);
             printf("%f\n", data.points.simulation_time_est);
+
         };
+        #endif
+    }
+
+    void export_flash_data_async() {
+        #ifdef DATALOG_EN
+
+        // set read start page
+        if ( export_page == 0 && start_page != 0 ) { export_page = start_page; }
+
+        // dont send anything if all the data has already been sent
+        if ( export_page >= page ) { return; }
+
+        flash_read_page(pin_cs_flash, export_page++, (uint8_t*)&data);
+
+        // calculate checksum for sending flash data
+        uint8_t checksum_a = 0;
+        uint8_t checksum_b = 0;
+
+        for ( int i = 0; i < 256; i++ ) { 
+            // get value from most recent data log
+            uint8_t v = data.raw[i];
+
+            // send value to radio buffer
+            radio::radio_tx_buf[radio::radio_tx_buf_position++] = v;
+
+            // calculate checksum on value
+            checksum_a += v; 
+            checksum_b += checksum_a; 
+        }
+
+        radio::radio_tx_buf[radio::radio_tx_buf_position++] = checksum_a;
+        radio::radio_tx_buf[radio::radio_tx_buf_position++] = checksum_b;
+        radio::radio_tx_buf[radio::radio_tx_buf_position++] = '\n';
+
+        // old, prints data as a string
+
+        // radio::radio_tx_buf_position = sprintf((radio::radio_tx_buf+radio::radio_tx_buf_position), "%i,%llu,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%i,%i,%i,%i,%i,%i,%f,%f,%f,%i,%i,%i,%f,%f,%f,%f,%f,%f,%f\n",
+        //     data.points.state,
+        //     data.points.time,
+        //     (data.points.flag_gpio&1),
+        //     (data.points.flag_gpio&0b10)>>1,
+        //     (data.points.flag_gpio&0b100)>>2,
+        //     (data.points.flag_gpio&0b1000)>>3,
+        //     (data.points.flag_gpio&0b10000)>>4,
+        //     (data.points.flag_gpio&0b100000)>>5,
+        //     (data.points.flag_gpio&0b1000000)>>6,
+        //     (data.points.flag_gpio&0b10000000)>>7,
+        //     (data.points.flag_state&1),
+        //     (data.points.flag_state&0b10)>>1,
+        //     (data.points.flag_state&0b100)>>2,
+        //     (data.points.flag_state&0b1000)>>3,
+        //     (data.points.flag_state&0b10000)>>4,
+        //     (data.points.flag_state&0b100000)>>5,
+        //     (data.points.flag_state&0b1000000)>>6,
+        //     (data.points.flag_state&0b10000000)>>7,
+        //     data.points.active_state_timer,
+        //     data.points.voltage_batt,
+        //     data.points.voltage_pyro,
+        //     data.points.position.x,
+        //     data.points.position.y,
+        //     data.points.position.z,
+        //     data.points.velocity.x,
+        //     data.points.velocity.y,
+        //     data.points.velocity.z,
+        //     data.points.accel_bias.x,
+        //     data.points.accel_bias.y,
+        //     data.points.accel_bias.z,
+        //     data.points.rotation.w,
+        //     data.points.rotation.x,
+        //     data.points.rotation.y,
+        //     data.points.rotation.z,
+        //     data.points.acceleration.x,
+        //     data.points.acceleration.y,
+        //     data.points.acceleration.z,
+        //     data.points.ori_rate.x,
+        //     data.points.ori_rate.y,
+        //     data.points.ori_rate.z,
+        //     data.points.baro_alt,
+        //     data.points.baro_pressure,
+        //     data.points.baro_temp,
+        //     data.points.mag.x,
+        //     data.points.mag.y,
+        //     data.points.mag.z,
+        //     data.points.burn_alt,
+        //     data.points.comp,
+        //     data.points.simulation_energy_est,
+        //     data.points.simulation_work_est,
+        //     data.points.simulation_position_est,
+        //     data.points.simulation_velocity_est,
+        //     data.points.simulation_time_est);
+        
+        #endif
+    }
+
+    void update() {
+        #ifdef DATALOG_EN
+        switch(get_vehicle_state()) {
+            case(state_boot): { 
+                break;
+            }
+            case(state_idle): { 
+                break;
+            }
+            case(state_nav_init): { 
+                if ( ++log_timing_idx >= 10 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_launch_idle): { 
+                if ( ++log_timing_idx >= 10 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_launch_detect): { 
+                if ( ++log_timing_idx >= 2 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_powered_ascent): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_ascent_coast): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_descent_coast): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_landing_start): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_landing_guidance): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_landing_terminal): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            case(state_landed): { 
+
+                // only log for 5 seconds after landing
+                if ( time_us_64() < timing::get_t_landing()+5000000 ) {
+
+                    if ( ++log_timing_idx >= 2 ) {
+                        log_flash_data();
+                        log_timing_idx = 0;
+                    }
+
+                } else {
+
+                    // send data back at 25hz
+                    // radio operates at 115200 bits/s, each flash page is 256*8 bits + 16 bit checksum
+                    // 2064 (page size) * 25 ~= 1/2 of the radio's max data throughput, which should prevent corruption
+
+                    if ( ++log_timing_idx >= 4 ) {
+                        export_flash_data_async();
+                        log_timing_idx = 0;
+                    }
+
+                }
+                
+                break;
+            }
+            case(state_abort): { 
+                if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+                break;
+            }
+            default: { 
+                
+                break;
+            }
+        }
+
         #endif
     }
 

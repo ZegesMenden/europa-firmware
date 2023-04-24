@@ -25,7 +25,7 @@
 #define USE_RADIO
 
 // enable gps integration to the kalman filter
-#define USE_GPS
+// #define USE_GPS
 
 // simulate flight (SITL)
 // #define SITL
@@ -87,6 +87,7 @@ const static bool pyro_3_en = false;
 // internal communication bus settings
 
 #define spi_default_baud 2000000
+#define spi_flash_baud 8000000
 
 // ============================================================================
 // global flags and variables
@@ -167,8 +168,7 @@ namespace timing {
     uint64_t T_landing = 0;
     uint64_t T_landing_burn_start = 0;
 
-    uint32_t total_runtime = 0;
-    uint32_t average_runtime = 0;
+    uint64_t average_runtime = 0;
 
     void set_MET(uint64_t t) { MET = t; }
     uint64_t get_MET() { return MET; }
@@ -196,7 +196,7 @@ namespace timing {
 // ============================================================================
 // vehicle state declaration and getters/setters
 
-enum system_state_t {
+enum system_state_t : uint8_t {
     // initialization of all systems
     state_boot,
 

@@ -68,9 +68,9 @@ bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 	gpio_put(cs, 0);
 
 	flash_send_byte(page_program);
-	flash_send_byte(0);
 	flash_send_byte((page_number>>8) & 0xff);
 	flash_send_byte(page_number & 0xff);
+	flash_send_byte(0);
 		
 	int err = spi_write_blocking(spi0, buf, 256);
 
@@ -139,11 +139,31 @@ bool flash_read_page(uint cs, uint16_t page_number, uint8_t *buf) {
 	gpio_put(cs, 0);
 
 	flash_send_byte(read_data);
-	flash_send_byte(0);
 	flash_send_byte((page_number>>8) & 0xff);
 	flash_send_byte(page_number & 0xff);
+	flash_send_byte(0);
 
 	int err = spi_read_blocking(spi0, 0, buf, 256);
+
+	gpio_put(cs, 1);
+
+	return err > 1 ? 1 : 0;
+
+}
+
+bool flash_read_bytes(uint cs, uint16_t page_number, uint8_t *buf, uint n_bytes) {
+
+  	while(flash_busy(cs)) {;}
+
+	gpio_put(cs, 1);
+	gpio_put(cs, 0);
+
+	flash_send_byte(read_data);
+	flash_send_byte((page_number>>8) & 0xff);
+	flash_send_byte(page_number & 0xff);
+	flash_send_byte(0);
+
+	int err = spi_read_blocking(spi0, 0, buf, n_bytes);
 
 	gpio_put(cs, 1);
 
