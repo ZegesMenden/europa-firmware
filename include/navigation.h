@@ -4,6 +4,7 @@
 #include "drivers/bmp581.h"
 #include "drivers/lis2mdl.h"
 #include "drivers/lsm6dso32.h"
+#include "drivers/gps.h"
 
 #pragma once
 
@@ -206,7 +207,8 @@ namespace nav {
 	
 	};
 
-	float mass;
+	float mass = 0.315;
+	vec3<float> moment_of_inertia = vec3(0.01, 0.01, 0.01);
 
 	const vec3<float> gravity(9.816, 0.0, 0.0);
 
@@ -226,6 +228,14 @@ namespace nav {
 	vec3<float> covariance_position;
 	vec3<float> covariance_velocity;
 	vec3<float> covariance_acceleration;
+
+	float lat_initial;
+	float lon_initial;
+
+	vec3<float> position_gps;
+
+	uint16_t gps_n_zero_offset_measurements = 0;
+	bool gps_zero_offset_lock = false;
 
 	float pressure;
 	float altitude;
@@ -284,14 +294,14 @@ namespace nav {
 		// Q is state uncertainty
 		// R is measurement uncertainty
 
-		kalman_x.set_Q(400.0f, 1.f, 1.f);
+		kalman_x.set_Q(400.0f, 1600.f, 1600.f);
     	kalman_x.set_R(2500.0f, 1.0f, 1.0f);
 
-		kalman_y.set_Q(1.f, 1.f, 1.f);
-		kalman_y.set_R(1.f, 1.f, 1.f);
+		kalman_y.set_Q(1200.f, 800.f, 1600.f);
+		kalman_y.set_R(25000.f, 1.f, 1.f);
 
-		kalman_z.set_Q(1.f, 1.f, 1.f);
-		kalman_z.set_R(1.f, 1.f, 1.f);
+		kalman_z.set_Q(1200.f, 800.f, 1600.f);
+		kalman_z.set_R(25000.f, 1.f, 1.f);
 
 		printf("============================================================================\nNAV init:\n\nInitializing IMU\n");
 		
@@ -388,10 +398,62 @@ namespace nav {
 		}	
 
 		// ============================================================================
-		// IMU
+		// GPS
 
-		// get new data from IMU
-		// imu.read_accel_and_gyro(&raw::accel.x, &raw::accel.y, &raw::accel.z, &raw::gyro.x, &raw::gyro.y, &raw::gyro.z);
+		#ifdef USE_GPS
+
+		if ( gps::lat != 0.0 && gps::lon != 0.0 && gps::gps_has_new_data && gps::n_sattelites > 5 ) {
+
+			if ( gps_n_zero_offset_measurements < 100 && !gps_zero_offset_lock ) {
+
+				gps_n_zero_offset_measurements++;
+
+				if ( lat_initial == 0 ) { 
+					lat_initial = gps::lat*PI/180.f; 
+					lon_initial = gps::lon*PI/180.f; 
+				}
+				else {
+
+					float measurement_displacement = DBPf(lat_initial/gps_n_zero_offset_measurements, lon_initial/gps_n_zero_offset_measurements, gps::lat, gps::lon);
+					if ( measurement_displacement > 5 ) { 
+						gps_n_zero_offset_measurements = 0;
+						lat_initial = 0;
+						lon_initial = 0;
+					} else {
+						lat_initial += gps::lat*PI/180.f;
+						lon_initial += gps::lon*PI/180.f;
+					}
+
+				}
+
+				if ( gps_n_zero_offset_measurements >= 100 ) {
+					gps_zero_offset_lock = true;
+					lat_initial /= 100.0f;
+					lon_initial /= 100.0f;
+				}
+
+			} else {
+
+				float distance_from_launchpad = DBPf(lat_initial, lon_initial, gps::lat*PI/180.f, gps::lon*PI/180.f);
+				float angle_from_launchpad = CBPf(lat_initial, lon_initial, gps::lat*PI/180.f, gps::lon*PI/180.f);
+
+				// position_gps.x = gps_alt - baro_alt_offs;
+				position_gps.y = distance_from_launchpad * cosf(angle_from_launchpad);
+				position_gps.z = distance_from_launchpad * sinf(angle_from_launchpad);
+
+				kalman_y.update_position(position_gps.y);
+				kalman_z.update_position(position_gps.z);
+				
+			}
+
+		}
+
+		#else
+
+		#endif
+
+		// ============================================================================
+		// IMU
 
 		uint32_t t_read_start = time_us_32();
 
@@ -436,11 +498,15 @@ namespace nav {
 		raw::read_time = time_us_32() - t_read_start;
 		uint32_t t_process_start = time_us_32();
 
+		// ================================================
+		// gyroscope
+
 		for ( int i = 0; i < raw::fifo_gyro_pos; i++ ) {
 
-			constexpr float gyro_read_dt = 1.f/416.f;
+			float gyro_read_dt = 1.f/416.f;
 
 			raw::gyro = raw::fifo_gyro[i];
+			rotational_velocity = ((vec3<float>)(raw::gyro)) * 0.00106526443f;
 
 			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle ) {
 
@@ -448,7 +514,6 @@ namespace nav {
 				if ( get_vehicle_state() == state_nav_init ) {
 
 					if ( !flags::nav::gyro_debiased ) {
-						rotational_velocity = ((vec3<float>)(raw::gyro)) * 0.00106526443f;
 						float rotational_velocity_magnitude = rotational_velocity.len();
 						
 						if ( rotational_velocity_magnitude < 0.025 ) {
@@ -473,7 +538,6 @@ namespace nav {
 				// gyro integration
 				if ( flags::nav::gyro_debiased ) {
 
-					rotational_velocity = ((vec3<float>)(raw::gyro)) * 0.00106526443f;
 					rotational_velocity -= rotational_velocity_bias;
 					float rotational_velocity_magnitude = rotational_velocity.len();
 					
@@ -490,16 +554,14 @@ namespace nav {
 
 			}
 
-			float gyro_deviation_from_0 = rotational_velocity.len() - landing_detect_ori_threshold;
-			flags::state::gyro_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
-															( gyro_deviation_from_0 < landing_detect_ori_threshold ) & \
-															( gyro_deviation_from_0 > -landing_detect_ori_threshold );
-
 		}
+
+		// ================================================
+		// accelerometer
 
 		for ( int i = 0; i < raw::fifo_accel_pos; i++ ) {
 
-			constexpr float accel_read_dt = 1.f/104.f;
+			float accel_read_dt = 1.f/104.f;
 
 			raw::accel = raw::fifo_accel[i];
 			acceleration_l = (vec3<float>)raw::accel * 0.009765625f;
@@ -522,10 +584,14 @@ namespace nav {
 
 			}
 
-			// if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {			
-			// 	kalman_y.update_posvel(0, 0);
-			// 	kalman_z.update_posvel(0, 0);
-			// }
+			#ifndef USE_GPS
+
+			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {			
+				kalman_y.update_posvel(0, 0);
+				kalman_z.update_posvel(0, 0);
+			}
+
+			#endif
 
 			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {
 
@@ -535,21 +601,30 @@ namespace nav {
 
 				// complementary filter with accelerometer
 				vec3<float> axis = acceleration_i.cross(vec3<float>(1.0, 0.0, 0.0));
-				rotation = quat<float>().from_axis_angle(0.0001f * angle, axis) * rotation;
+				rotation = quat<float>().from_axis_angle(0.01f * angle, axis) * rotation;
 				rotation = rotation.normalize();
 
 			}
 
-			flags::state::accel_over_ld_threshold = (get_vehicle_state() == state_launch_detect) & ( acceleration_l.x > launch_detect_accel_threshold );
-			flags::state::accel_under_burnout_threshold = (get_vehicle_state() == state_powered_ascent) & ( acceleration_l.x < burnout_detect_accel_threshold );
-			flags::state::accel_over_landing_threshold = (get_vehicle_state() == state_landing_start) & ( acceleration_l.x > landing_burn_detect_accel_threshold );
-
-			float deviation_from_g = (acceleration_l.len()-9.816);
-			flags::state::accel_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
-															( deviation_from_g < landing_detect_accel_threshold ) & \
-															( deviation_from_g > -landing_burn_detect_accel_threshold );
-
 		}
+
+		// update all flags
+
+		flags::state::accel_over_ld_threshold = (get_vehicle_state() == state_launch_detect) & ( acceleration_l.x > launch_detect_accel_threshold );
+		flags::state::accel_under_burnout_threshold = (get_vehicle_state() == state_powered_ascent) & ( acceleration_l.x < burnout_detect_accel_threshold );
+		flags::state::accel_over_landing_threshold = (get_vehicle_state() == state_landing_start) & ( acceleration_l.x > landing_burn_detect_accel_threshold );
+
+		float deviation_from_g = (acceleration_l.len()-9.816);
+		flags::state::accel_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
+														( deviation_from_g < landing_detect_accel_threshold ) & \
+														( deviation_from_g > -landing_burn_detect_accel_threshold );
+
+		flags::state::velocity_over_apogee_threshold = ( get_vehicle_state() == state_ascent_coast ) & ( velocity.x < apogee_detect_vel_threshold );
+
+		float gyro_deviation_from_0 = rotational_velocity.len() - landing_detect_ori_threshold;
+		flags::state::gyro_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
+														( gyro_deviation_from_0 < landing_detect_ori_threshold ) & \
+														( gyro_deviation_from_0 > -landing_detect_ori_threshold );
 
 		raw::fifo_gyro_pos = 0;
 		raw::fifo_accel_pos = 0;
