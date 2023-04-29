@@ -66,9 +66,9 @@ namespace core1_interface {
 
         if ( multicore_fifo_pop_timeout_us(10, &fifo_rx) ) {
 
-            if ( fifo_rx == CORE1_NEW_ASCENT_SIM_RESULT ) { flags::control::new_ascent_sim_result = true; }
-            if ( fifo_rx == CORE1_NEW_LANDING_SIM_RESULT ) { flags::control::new_landing_sim_result = true; }
-            if ( fifo_rx == CORE1_NEW_DIVERT_SIM_RESULT ) { flags::control::new_divert_sim_result = true; }
+            if ( fifo_rx == CORE1_NEW_ASCENT_SIM_RESULT ) { flags::control_flags::new_ascent_sim_result = true; }
+            if ( fifo_rx == CORE1_NEW_LANDING_SIM_RESULT ) { flags::control_flags::new_landing_sim_result = true; }
+            if ( fifo_rx == CORE1_NEW_DIVERT_SIM_RESULT ) { flags::control_flags::new_divert_sim_result = true; }
 
         }
 

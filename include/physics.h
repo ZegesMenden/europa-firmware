@@ -206,7 +206,7 @@ public:
      * @brief Returns the length of the vector
      * @return length of the vector
      */
-    inline T len() { if(x == y == z == 0) { return 0; } return(sqrtf(x * x + y * y + z * z)); };
+    inline T len() { return(sqrtf(x * x + y * y + z * z)); };
 
     /**
      * @brief Returns the cross product of the left and right hand vectors

@@ -11,6 +11,7 @@ namespace state {
     uint8_t accel_landing_burn_timer = 0;
     uint8_t accel_landing_timer = 0;
     uint8_t velocity_apogee_timer = 0;
+    uint8_t landing_detect_timer = 0;
 
     // active timer being used for state switch ( for datalogging? )
     uint8_t current_state_timer = 0;
@@ -28,9 +29,9 @@ namespace state {
 
             case (state_idle) : {
                 
-                if ( !flags::perif::switch_sts ) { switch_has_been_low = true; }
+                if ( !flags::perif_flags::switch_sts ) { switch_has_been_low = true; }
 
-                if ( flags::perif::switch_sts && switch_has_been_low ) {
+                if ( flags::perif_flags::switch_sts && switch_has_been_low ) {
                     switch_has_been_low = false;
                     set_vehicle_state(state_nav_init);
                 }
@@ -40,7 +41,7 @@ namespace state {
 
             case (state_nav_init) : {
 
-                if ( flags::nav::baro_debiased && flags::nav::gyro_debiased ) {
+                if ( flags::nav_flags::baro_debiased && flags::nav_flags::gyro_debiased ) {
                     set_vehicle_state(state_launch_idle);
                 }
 
@@ -49,9 +50,9 @@ namespace state {
 
             case (state_launch_idle) : {
 
-                if ( !flags::perif::switch_sts ) { switch_has_been_low = true; }            
+                if ( !flags::perif_flags::switch_sts ) { switch_has_been_low = true; }            
                 
-                if ( flags::perif::switch_sts && switch_has_been_low ) {
+                if ( flags::perif_flags::switch_sts && switch_has_been_low ) {
                     switch_has_been_low = false;
                     set_vehicle_state(state_launch_detect);
                 }
@@ -61,7 +62,7 @@ namespace state {
 
             case (state_launch_detect) : {
                 
-                if ( flags::state::accel_over_ld_threshold ) { accel_ld_timer++; }
+                if ( flags::state_flags::accel_over_ld_threshold ) { accel_ld_timer++; }
                 else { accel_ld_timer = 0; }
 
                 if ( accel_ld_timer > 10 ) { set_vehicle_state(state_powered_ascent); }
@@ -73,7 +74,7 @@ namespace state {
 
             case (state_powered_ascent) : {
 
-                if ( flags::state::accel_under_burnout_threshold ) { accel_burnout_timer++; }
+                if ( flags::state_flags::accel_under_burnout_threshold ) { accel_burnout_timer++; }
                 else { accel_burnout_timer = 0; }
 
                 if ( accel_burnout_timer > 25 ) { set_vehicle_state(state_ascent_coast); }
@@ -85,7 +86,7 @@ namespace state {
 
             case (state_ascent_coast) : {
                 
-                if ( flags::state::velocity_over_apogee_threshold ) { velocity_apogee_timer++; }
+                if ( flags::state_flags::velocity_over_apogee_threshold ) { velocity_apogee_timer++; }
                 else { velocity_apogee_timer = 0; }
 
                 if ( velocity_apogee_timer > 10 ) { set_vehicle_state(state_descent_coast); }
@@ -96,17 +97,29 @@ namespace state {
             }
 
             case (state_descent_coast) : {
+
+                if ( timing::get_t_apogee() == 0 ) { timing::set_t_apogee(time_us_64()); }
                 
-                if ( flags::control::start_landing_burn ) {
+                if ( flags::control_flags::start_landing_burn ) {
                     set_vehicle_state(state_landing_start);
                 }
+
+                if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+                    landing_detect_timer++;
+                } else { 
+                    landing_detect_timer = 0;
+                }
+
+                if ( landing_detect_timer > 100 ) { set_vehicle_state(state_landed); }
 
                 break;
             }
 
             case (state_landing_start) : {
                 
-                if ( flags::state::accel_over_landing_threshold ) { accel_landing_burn_timer++; }
+                if ( timing::get_t_apogee() == 0 ) { timing::set_t_apogee(time_us_64()); }
+                
+                if ( flags::state_flags::accel_over_landing_threshold ) { accel_landing_burn_timer++; }
                 else { accel_landing_burn_timer = 0; }
 
                 if ( accel_landing_burn_timer > 5 ) { 
@@ -116,6 +129,14 @@ namespace state {
 
                 current_state_timer = accel_landing_burn_timer;
 
+                if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+                    landing_detect_timer++;
+                } else { 
+                    landing_detect_timer = 0;
+                }
+
+                if ( landing_detect_timer > 100 ) { set_vehicle_state(state_landed); }
+
                 break;
             }
 
@@ -124,19 +145,33 @@ namespace state {
                 
                 if ( (time_us_64() > timing::get_t_landing_burn_start()+1700000) || ( nav::position.x < 0.5f ) ) { set_vehicle_state(state_landing_terminal); }
 
+                if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+                    landing_detect_timer++;
+                } else { 
+                    landing_detect_timer = 0;
+                }
+
+                if ( landing_detect_timer > 100 ) { set_vehicle_state(state_landed); }
+
                 break;
             }
 
             case (state_landing_terminal) : {
                 
-                if ( ( flags::state::accel_within_landed_threshold && flags::state::gyro_within_landed_threshold && ( time_us_64() > timing::get_t_landing_burn_start()+1500000 ) ) || ( time_us_64() > timing::get_t_landing_burn_start()+6000000 ) ) {
-                    set_vehicle_state(state_landed);
+                if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+                    landing_detect_timer++;
+                } else { 
+                    landing_detect_timer = 0;
                 }
+
+                if ( landing_detect_timer > 100 ) { set_vehicle_state(state_landed); }
 
                 break;
             }
 
             case (state_landed) : {
+
+                if ( timing::get_t_landing() == 0 ) { timing::set_t_landing(time_us_64()); }
                 
                 break;
             }

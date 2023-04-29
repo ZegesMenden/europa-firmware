@@ -61,7 +61,7 @@ namespace control {
 
     vec3<float> desired_torque;
     vec3<float> tvc_position;
-    vec3<float> tvc_lever = vec3(0.04, 0.0, 0.0);
+    vec3<float> tvc_lever = vec3(0.3, 0.0, 0.0);
         
     float thrust;
 
@@ -70,6 +70,7 @@ namespace control {
     float simulation_position_est;
     float simulation_velocity_est;
     float simulation_time_est;
+    uint32_t simulation_time_taken;
     
     const uint16_t servo_neutral = 1500;
 
@@ -82,8 +83,8 @@ namespace control {
     uint16_t servo_2_min = 1225;
     uint16_t servo_2_max = 1625;
 
-    pid pid_ori_y(0.3*180.f/PI, 0.0, 0.05*180.f/PI, 0.0);
-    pid pid_ori_z(0.3*180.f/PI, 0.0, 0.05*180.f/PI, 0.0);
+    pid pid_ori_y(14, 0.0, 8, 0.0);
+    pid pid_ori_z(14, 0.0, 8, 0.0);
 
     namespace gfield {
 
@@ -140,8 +141,8 @@ namespace control {
                 // B = E/F
                 burn_alt = energy/(adjusted_thrust);
 
-                if ( burn_alt > 12.f ) { burn_alt = 12.f; flags::control::burn_alt_over_safe_thresh = true; }
-                else { flags::control::burn_alt_over_safe_thresh = false; }
+                if ( burn_alt > 12.f ) { burn_alt = 12.f; flags::control_flags::burn_alt_over_safe_thresh = true; }
+                else { flags::control_flags::burn_alt_over_safe_thresh = false; }
 
                 velocity_at_burn_alt = -sqrtf(nav::velocity.x*nav::velocity.x + 2*nav::acceleration_l.len() * ( nav::position.x - burn_alt ));
                 
@@ -154,7 +155,7 @@ namespace control {
                 }
 
                 alt_to_start_burn = burn_alt - nav::velocity.x*0.6;
-                if ( nav::position.x + nav::velocity.x*0.005 < alt_to_start_burn ) { flags::control::start_landing_burn = true; }
+                if ( nav::position.x + nav::velocity.x*0.005 < alt_to_start_burn ) { flags::control_flags::start_landing_burn = true; }
 
             }
 
@@ -180,11 +181,10 @@ namespace control {
                 // float vertical_magnitude = cosf(desired_divert_vertical_ang);
                 float vertical_magnitude = desired_divert_vertical_ang;
 
-
-
             }
 
         }
+
     }
 
     void clear_outputs() {
@@ -233,12 +233,13 @@ namespace control {
 
             // process previous simulation if there is one
 
-            if ( flags::control::new_ascent_sim_result ) {
-                flags::control::new_ascent_sim_result = false;
+            if ( flags::control_flags::new_ascent_sim_result ) {
+                flags::control_flags::new_ascent_sim_result = false;
                 
                 simulation_energy_est = simulation::ascent_sim_output.energy;
                 simulation_position_est = simulation::ascent_sim_output.position;
                 simulation_time_est = simulation::ascent_sim_output.time;
+                simulation_time_taken = simulation::ascent_sim_output.time_taken;
 
                 simulation_work_est = 0.0;
                 simulation_velocity_est = 0.0;
@@ -252,21 +253,22 @@ namespace control {
             simulation::ascent_sim_input.velocity = nav::velocity.x;
             simulation::ascent_sim_input.time = float(timing::get_MET()) / 1000000.f;
 
-            multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_ASCENT_SIM_INPUT, 10);
+            flags::control_flags::core1_communication_failure = !multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_ASCENT_SIM_INPUT, 10);
 
         }
 
-        if ( get_vehicle_state() == state_descent_coast || get_vehicle_state() == state_landing_start ) {
+        if ( get_vehicle_state() == state_descent_coast ) {
 
             // process previous simulation if there is one
 
-            if ( flags::control::new_landing_sim_result ) {
-                flags::control::new_landing_sim_result = false;
+            if ( flags::control_flags::new_landing_sim_result ) {
+                flags::control_flags::new_landing_sim_result = false;
                 
                 simulation_work_est = simulation::landing_sim_output.work_done;
                 simulation_position_est = simulation::landing_sim_output.position;
                 simulation_velocity_est = simulation::landing_sim_output.velocity;
                 simulation_time_est = simulation::landing_sim_output.time + float(timing::get_MET()) / 1000000.f;
+                simulation_time_taken = simulation::landing_sim_output.time_taken;
 
                 simulation_energy_est = 0.0;
             }
@@ -279,7 +281,37 @@ namespace control {
             simulation::landing_sim_input.velocity = nav::velocity.x;
             simulation::landing_sim_input.burn_alt = gfield::burn_alt;
 
-            multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_LANDING_SIM_INPUT, 10);
+            flags::control_flags::core1_communication_failure = !multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_LANDING_SIM_INPUT, 10);
+
+            gfield::update();
+
+        }
+
+        if ( get_vehicle_state() == state_landing_start || get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) {
+
+            if ( flags::control_flags::new_divert_sim_result ) {
+                flags::control_flags::new_divert_sim_result = false;
+                
+                simulation_work_est = simulation::divert_sim_output.work_done;
+                simulation_position_est = simulation::divert_sim_output.position;
+                simulation_velocity_est = simulation::divert_sim_output.velocity;
+                simulation_time_est = simulation::divert_sim_output.time + float(timing::get_MET()) / 1000000.f;
+                simulation_time_taken = simulation::divert_sim_output.time_taken;
+
+                simulation_energy_est = 0.0;
+            }
+
+            // prepare new simulation
+
+            simulation::divert_sim_input.mass = nav::mass;
+            simulation::divert_sim_input.acceleration = nav::acceleration_l.len();
+            simulation::divert_sim_input.position = nav::position.x;
+            simulation::divert_sim_input.velocity = nav::velocity.x;
+            simulation::divert_sim_input.time_since_burn_start = time_us_64() - timing::get_t_landing_burn_start();
+            
+            flags::control_flags::core1_communication_failure = !multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_DIVERT_SIM_INPUT, 10);
+
+            gfield::update();
 
         }
 
@@ -307,8 +339,12 @@ namespace control {
             angle_error.y = atan2f(-target_vector.z, target_vector.x);
             angle_error.z = atan2f(target_vector.y, target_vector.x);
 
-            pid_ori_y.updateWithDerivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
-            pid_ori_z.updateWithDerivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
+            vec3<float> rotational_accel_error = nav::rotational_acceleration;
+            rotational_accel_error.y -= pid_ori_y.output;
+            rotational_accel_error.z -= pid_ori_z.output;
+
+            pid_ori_y.updateWithDerivative(angle_error.y, (-angle_error.y*5)-nav::rotational_velocity.y, 0.01);
+            pid_ori_z.updateWithDerivative(angle_error.z, (-angle_error.z*5)-nav::rotational_velocity.z, 0.01);
 
             float servo_position_y = 0.0;
             float servo_position_z = 0.0;
@@ -316,14 +352,17 @@ namespace control {
             // cant divide by thrust if it's zero
             if ( thrust > 0.1 ) {
 
-                servo_position_y = (-pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x);
-                servo_position_z = (-pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x);
+                // pid_ori_y.output-=rotational_accel_error.y;
+                // pid_ori_z.output-=rotational_accel_error.z;
+
+                servo_position_y = -(pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x);
+                servo_position_z = -(pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x);
             
             } else if ( get_vehicle_state() == state_landing_start ) {
             
                 // calculate angle for the peak thrust of the landing burn
-                servo_position_y = (pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x);
-                servo_position_z = (pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x);
+                servo_position_y = (-pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x);
+                servo_position_z = (-pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x);
             
             }    
 

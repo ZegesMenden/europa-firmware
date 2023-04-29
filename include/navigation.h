@@ -207,14 +207,15 @@ namespace nav {
 	
 	};
 
-	float mass = 0.315;
-	vec3<float> moment_of_inertia = vec3(0.01, 0.01, 0.01);
+	float mass = 0.58;
+	vec3<float> moment_of_inertia = vec3(0.01, 0.02805354994, 0.02805354994);
 
 	const vec3<float> gravity(9.816, 0.0, 0.0);
 
 	quat<float> rotation;
 	vec3<float> rotational_velocity;
 	vec3<float> rotational_velocity_bias;
+	vec3<float> rotational_acceleration;
 	
 	vec3<float> acceleration_l;
 	vec3<float> acceleration_i;
@@ -295,7 +296,7 @@ namespace nav {
 		// R is measurement uncertainty
 
 		kalman_x.set_Q(400.0f, 1600.f, 1600.f);
-    	kalman_x.set_R(2500.0f, 1.0f, 1.0f);
+    	kalman_x.set_R(25000.0f, 1.0f, 1.0f);
 
 		kalman_y.set_Q(1200.f, 800.f, 1600.f);
 		kalman_y.set_R(25000.f, 1.f, 1.f);
@@ -375,22 +376,23 @@ namespace nav {
 			//P = measured pressure (Pa) from the sensor
 			//p0 = reference pressure at sea level (e.g. 1013.25hPa)
 
-			altitude_asl = ( 1.f - fast_pow(pressure/101325.f) ) * 44330.f;
+			// altitude_asl = ( 1.f - fast_pow(pressure/101325.f) ) * 44330.f;
+			altitude_asl = ( 1.f - powf(pressure/101325.f, 1/5.255) ) * 44330.f;
 
-			if ( !flags::nav::baro_debiased && altitude_asl < 500.f) {
+			if ( !flags::nav_flags::baro_debiased && altitude_asl < 500.f) {
 
 				pad_altitude += altitude_asl;
 				timing::baro_bias_count++;
 
-				if ( timing::baro_bias_count >= baro_bias_count ) {
-					flags::nav::baro_debiased = true;
+				if ( timing::baro_bias_count == baro_bias_count ) {
+					flags::nav_flags::baro_debiased = true;
 					pad_altitude /= (float)baro_bias_count;
 				}
 
 			} else {
 
 				altitude = altitude_asl - pad_altitude;
-				if ( get_vehicle_state() == state_nav_init && altitude > 2 ) { flags::nav::baro_debiased = false; timing::baro_bias_count = 0; }
+				if ( get_vehicle_state() == state_nav_init && altitude > 0.25 ) { flags::nav_flags::baro_debiased = false; timing::baro_bias_count = 0; }
 
 				kalman_x.update_position(altitude);
 
@@ -506,14 +508,18 @@ namespace nav {
 			float gyro_read_dt = 1.f/416.f;
 
 			raw::gyro = raw::fifo_gyro[i];
+
+			vec3<float> last_rotational_velocity = rotational_velocity;
 			rotational_velocity = ((vec3<float>)(raw::gyro)) * 0.00106526443f;
+
+			rotational_acceleration = rotational_acceleration*0.3 + (rotational_velocity-last_rotational_velocity)*0.7;
 
 			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle ) {
 
 				// sensor debiasing
 				if ( get_vehicle_state() == state_nav_init ) {
 
-					if ( !flags::nav::gyro_debiased ) {
+					if ( !flags::nav_flags::gyro_debiased ) {
 						float rotational_velocity_magnitude = rotational_velocity.len();
 						
 						if ( rotational_velocity_magnitude < 0.025 ) {
@@ -521,7 +527,7 @@ namespace nav {
 							timing::gyro_bias_count++;
 
 							if ( timing::gyro_bias_count >= gyro_bias_count ) {
-								flags::nav::gyro_debiased = true;
+								flags::nav_flags::gyro_debiased = true;
 								rotational_velocity_bias /= float(gyro_bias_count);
 							}
 						} else { 
@@ -536,7 +542,7 @@ namespace nav {
 				}
 
 				// gyro integration
-				if ( flags::nav::gyro_debiased ) {
+				if ( flags::nav_flags::gyro_debiased ) {
 
 					rotational_velocity -= rotational_velocity_bias;
 					float rotational_velocity_magnitude = rotational_velocity.len();
@@ -597,7 +603,7 @@ namespace nav {
 
 				// if accel is within +- 6 degrees of current orientation, mark orientation as converged
 				float angle = acosf(clamp(acceleration_i.dot(vec3<float>(1.0, 0.0, 0.0)), -1.0f, 1.0f));
-				flags::nav::orientation_converged = ((1.45f < angle) & (angle < 1.68f));
+				flags::nav_flags::orientation_converged = ((1.45f < angle) & (angle < 1.68f));
 
 				// complementary filter with accelerometer
 				vec3<float> axis = acceleration_i.cross(vec3<float>(1.0, 0.0, 0.0));
@@ -610,21 +616,20 @@ namespace nav {
 
 		// update all flags
 
-		flags::state::accel_over_ld_threshold = (get_vehicle_state() == state_launch_detect) & ( acceleration_l.x > launch_detect_accel_threshold );
-		flags::state::accel_under_burnout_threshold = (get_vehicle_state() == state_powered_ascent) & ( acceleration_l.x < burnout_detect_accel_threshold );
-		flags::state::accel_over_landing_threshold = (get_vehicle_state() == state_landing_start) & ( acceleration_l.x > landing_burn_detect_accel_threshold );
+		flags::state_flags::accel_over_ld_threshold = (get_vehicle_state() == state_launch_detect) & ( acceleration_l.x > launch_detect_accel_threshold );
+		flags::state_flags::accel_under_burnout_threshold = (get_vehicle_state() == state_powered_ascent) & ( acceleration_l.x < burnout_detect_accel_threshold );
+		flags::state_flags::accel_over_landing_threshold = (get_vehicle_state() == state_landing_start) & ( acceleration_l.x > landing_burn_detect_accel_threshold );
 
-		float deviation_from_g = (acceleration_l.len()-9.816);
-		flags::state::accel_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
-														( deviation_from_g < landing_detect_accel_threshold ) & \
-														( deviation_from_g > -landing_burn_detect_accel_threshold );
+		float deviation_from_g = (acceleration_l.len());
+		flags::state_flags::accel_within_landed_threshold = 	( deviation_from_g < 9.816+landing_detect_accel_threshold ) & ( deviation_from_g > 9.816-landing_detect_accel_threshold );
 
-		flags::state::velocity_over_apogee_threshold = ( get_vehicle_state() == state_ascent_coast ) & ( velocity.x < apogee_detect_vel_threshold );
+		flags::state_flags::velocity_over_apogee_threshold = ( get_vehicle_state() == state_ascent_coast ) & ( velocity.x < apogee_detect_vel_threshold );
 
-		float gyro_deviation_from_0 = rotational_velocity.len() - landing_detect_ori_threshold;
-		flags::state::gyro_within_landed_threshold = 	( get_vehicle_state() == state_landing_terminal ) & \
-														( gyro_deviation_from_0 < landing_detect_ori_threshold ) & \
-														( gyro_deviation_from_0 > -landing_detect_ori_threshold );
+		float gyro_deviation_from_0 = rotational_velocity.len();
+		flags::state_flags::gyro_within_landed_threshold = ( gyro_deviation_from_0 < landing_detect_ori_threshold );
+
+		flags::state_flags::baro_below_alt_threshold = position.x < 0.25;
+		flags::state_flags::velocity_below_landed_threshold = (velocity.x > -0.1) && (velocity.x < 0.1);
 
 		raw::fifo_gyro_pos = 0;
 		raw::fifo_accel_pos = 0;

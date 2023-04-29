@@ -32,8 +32,10 @@ int main(void)
 
     .state = &vehicle_state,
     .time = &timing::RUNTIME,
-    .flag_gpio = &flags::perif::gpio_sts,
-    .flag_state = &flags::state::sts_bitmap,
+    .flag_gpio = &flags::perif_flags::gpio_sts,
+    .flag_state = &flags::state_flags::sts_bitmap,
+    .flag_control = &flags::control_flags::control_bitmap,
+    .flag_nav = &flags::nav_flags::nav_bitmap,
     .active_state_timer = &state::current_state_timer,
     .voltage_batt = &perif::voltage_batt_raw,
     .voltage_pyro = &perif::voltage_pyro_raw,
@@ -62,6 +64,8 @@ int main(void)
 
   };
   
+  sleep_ms(2000);
+
   print_compile_config();
   perif::init();
   nav::init();
@@ -77,7 +81,7 @@ int main(void)
   core1_interface::core1_divert_sim_func = (core1_interface::callback_t)simulation::run_divert_sim;
   core1_interface::init();
 
-  vehicle_state = state_nav_init;
+  vehicle_state = state_idle;
 
   while(1) {
 
@@ -96,7 +100,7 @@ int main(void)
       update_task(task_gps);
     #endif
 
-    if ( time_us_64() > 10000 ) { set_vehicle_state(state_landed); }
+    // if ( time_us_64() > 10000 ) { set_vehicle_state(state_landed); }
 
     timing::average_runtime = (time_us_64()-t_start);
 

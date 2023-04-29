@@ -22,7 +22,7 @@
 #define TELEMETRY_EN
 
 // use radio instead of usb serial
-#define USE_RADIO
+// #define USE_RADIO
 
 // enable gps integration to the kalman filter
 // #define USE_GPS
@@ -58,10 +58,10 @@ const static float apogee_detect_vel_threshold = 0.0f;
 const static float landing_burn_detect_accel_threshold = 6.f;
 
 // deviation from 1g that rocket can feel to be landed
-const static float landing_detect_accel_threshold = 0.5f;
+const static float landing_detect_accel_threshold = 0.8f;
 
 // deviation from 0 rad/s that rocket can feel to be landed
-const static float landing_detect_ori_threshold = 0.02f;
+const static float landing_detect_ori_threshold = 0.0698132f;
 
 // ============================================================================
 // NAV settings
@@ -70,16 +70,16 @@ const static float landing_detect_ori_threshold = 0.02f;
 const static uint16_t gyro_bias_count = 2000;
 
 // number of samples to take to determine altitude offset
-const static uint16_t baro_bias_count = 100;
+const static uint16_t baro_bias_count = 200;
 
 // ============================================================================
 // pyro settings
 
-uint32_t pyro_1_fire_dur_us = 0;
+uint32_t pyro_1_fire_dur_us = 500000;
 uint32_t pyro_2_fire_dur_us = 0;
 uint32_t pyro_3_fire_dur_us = 0;
 
-const static bool pyro_1_en = false;
+const static bool pyro_1_en = true;
 const static bool pyro_2_en = false;
 const static bool pyro_3_en = false;
 
@@ -87,7 +87,7 @@ const static bool pyro_3_en = false;
 // internal communication bus settings
 
 #define spi_default_baud 2000000
-#define spi_flash_baud 8000000
+#define spi_flash_baud 4000000
 
 // ============================================================================
 // global flags and variables
@@ -96,7 +96,7 @@ const static bool pyro_3_en = false;
 
 namespace flags {
     
-    namespace state {
+    namespace state_flags {
     
         volatile bool accel_over_ld_threshold = false;
 
@@ -110,7 +110,18 @@ namespace flags {
         volatile bool accel_within_landed_threshold = false;
         volatile bool gyro_within_landed_threshold = false;
 
+        volatile bool baro_below_alt_threshold = false;
+        volatile bool velocity_below_landed_threshold = false;
+
         uint8_t sts_bitmap = 0;
+        // accel_over_ld_threshold
+        // accel_under_burnout_threshold
+        // velocity_over_apogee_threshold
+        // accel_over_landing_threshold
+        // accel_within_landed_threshold
+        // gyro_within_landed_threshold
+        // baro_below_alt_threshold
+        // velocity_below_landed_threshold
 
     }
 
@@ -120,7 +131,7 @@ namespace flags {
 
     }
 
-    namespace nav {
+    namespace nav_flags {
         
         volatile bool gyro_debiased = false;
         volatile bool baro_debiased = false;
@@ -134,9 +145,19 @@ namespace flags {
 
         volatile bool orientation_converged = false;
 
+        uint8_t nav_bitmap;
+        // gyro_debiased
+        // baro_debiased
+        // gps_lock
+        // gps_initial_position_lock
+        // kalman_x_converged
+        // kalman_y_converged
+        // kalman_z_converged
+        // orientation_converged
+
     }
 
-    namespace control {
+    namespace control_flags {
 
         volatile bool start_landing_burn = false;
         volatile bool burn_alt_over_safe_thresh = false;
@@ -145,16 +166,66 @@ namespace flags {
         volatile bool new_landing_sim_result = false;
         volatile bool new_divert_sim_result = false;
 
+        volatile bool core1_communication_failure = false;
+
+        uint8_t control_bitmap;
+        // start_landing_burn
+        // burn_alt_over_safe_thresh
+        // core1_communication_failure
+
     }
 
-    namespace perif {
+    namespace perif_flags {
 
         uint8_t gpio_sts = 0;
+        // switch_sts
+
         uint8_t pyro_sts = 0;
+        bool pyro_1_fire = false;
+        bool pyro_2_fire = false;
+        bool pyro_3_fire = false;
+        bool pyro_1_cont = false;
+        bool pyro_2_cont = false;
+        bool pyro_3_cont = false;
+        
+        // pyro_has_power
+        // pyro_1_fire
+        // pyro_2_fire
+        // pyro_3_fire
+        // pyro_1_cont
+        // pyro_2_cont
+        // pyro_3_cont
 
         volatile bool running_from_lipo = false;
         volatile bool pyro_has_power = false;
         volatile bool switch_sts = false;
+
+    }
+
+    void update() {
+        
+        nav_flags::nav_bitmap = (nav_flags::gyro_debiased<<7) |
+                                (nav_flags::baro_debiased<<6) |
+                                (nav_flags::gps_lock<<5) |
+                                (nav_flags::gps_initial_position_lock<<5) |
+                                (nav_flags::kalman_x_converged<<4) |
+                                (nav_flags::kalman_y_converged<<3) |
+                                (nav_flags::kalman_z_converged<<2) |
+                                (nav_flags::orientation_converged<<1);
+        
+        control_flags::control_bitmap = (control_flags::start_landing_burn) |
+                                        (control_flags::burn_alt_over_safe_thresh) |
+                                        (control_flags::core1_communication_failure);
+
+        perif_flags::pyro_sts = (perif_flags::pyro_has_power<<7) |
+                                (perif_flags::pyro_1_fire<<6) |
+                                (perif_flags::pyro_2_fire<<5) |
+                                (perif_flags::pyro_3_fire<<4) |
+                                (perif_flags::pyro_1_cont<<3) |
+                                (perif_flags::pyro_2_cont<<2) |
+                                (perif_flags::pyro_3_cont<<1);
+
+        perif_flags::gpio_sts = perif_flags::switch_sts;
 
     }
 
@@ -167,6 +238,7 @@ namespace timing {
     uint64_t T_launch = 0;
     uint64_t T_landing = 0;
     uint64_t T_landing_burn_start = 0;
+    uint64_t T_apogee = 0;
 
     uint64_t average_runtime = 0;
 
@@ -182,12 +254,14 @@ namespace timing {
     void set_t_landing_burn_start(uint64_t t) { T_landing_burn_start = t; }
     uint64_t get_t_landing_burn_start() { return T_landing_burn_start; }
 
+    void set_t_apogee(uint64_t t) { T_apogee = t; }
+    uint64_t get_t_apogee() { return T_apogee; }
+
     void update() {
 
         RUNTIME = time_us_64();
 
         if ( get_t_launch() > 0 ) { set_MET(time_us_64()-get_t_launch()); }
-        if ( get_t_landing_burn_start() > 0 ) { set_t_landing_burn_start(time_us_64()-get_t_landing_burn_start()); }
 
     }
 

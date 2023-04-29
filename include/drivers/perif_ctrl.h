@@ -52,8 +52,8 @@ namespace perif {
     
     bool pyro_1_fire_condition() {
         
-        if ( get_vehicle_state() == state_descent_coast || get_vehicle_state() == state_landing_start ) {
-            if ( flags::control::start_landing_burn ) { return 1; }
+        if ( get_vehicle_state() == state_descent_coast && time_us_64() > timing::get_t_apogee()+1000000) {
+            return 1;
         }
 
         return 0;
@@ -257,9 +257,13 @@ namespace perif {
 
         #ifdef PYRO_EN
 
-        pyro_1_fire = gpio_get(pin_pyro_1_cont);
-        pyro_2_fire = gpio_get(pin_pyro_2_cont);
-        pyro_3_fire = gpio_get(pin_pyro_3_cont);
+        pyro_1_cont = gpio_get(pin_pyro_1_cont);
+        pyro_2_cont = gpio_get(pin_pyro_2_cont);
+        pyro_3_cont = gpio_get(pin_pyro_3_cont);
+
+        flags::perif_flags::pyro_1_cont = pyro_1_cont;
+        flags::perif_flags::pyro_2_cont = pyro_2_cont;
+        flags::perif_flags::pyro_3_cont = pyro_3_cont;
         
         if ( !vehicle_has_launched() ) {
             gpio_put(pin_pyro_1_fire, 0);
@@ -324,7 +328,7 @@ namespace perif {
         adc_select_input(3);
         voltage_switch_raw = adc_read();
 
-        flags::perif::switch_sts = voltage_switch_raw > 3500;
+        flags::perif_flags::switch_sts = voltage_switch_raw > 3500;
 
         // ============================================================================================
         // neopixel and buzzer
