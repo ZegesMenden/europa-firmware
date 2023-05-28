@@ -66,7 +66,7 @@ namespace control {
 
 	vec3<float> desired_torque;
 	vec3<float> tvc_position;
-	vec3<float> tvc_lever = vec3(0.3, 0.0, 0.0);
+	vec3<float> tvc_lever = vec3(0.26, 0.0, 0.0);
 		
 	float thrust;
 
@@ -88,8 +88,8 @@ namespace control {
 	uint16_t servo_2_min = 1225;
 	uint16_t servo_2_max = 1625;
 
-	pid pid_ori_y(14, 0.0, 8, 0.0);
-	pid pid_ori_z(14, 0.0, 8, 0.0);
+	pid pid_ori_y(8, 0.0, 6, 0.0);
+	pid pid_ori_z(8, 0.0, 6, 0.0);
 
 	namespace gfield {
 
@@ -101,7 +101,7 @@ namespace control {
 		float velocity_at_burn_alt = 0;
 		float burn_time = 0;
 
-		float average_thrust = 5;
+		float average_thrust = 10.5;
 		float target_landing_alt = 0.25;
 
 		float alt_to_start_burn = 0;
@@ -320,7 +320,7 @@ namespace control {
 
 		}
 
-		// if ( vehicle_has_control() ) {
+		if ( vehicle_has_control() ) {
 
 			// ================================================================
 			// thrust estimation
@@ -344,12 +344,12 @@ namespace control {
 			angle_error.y = atan2f(-error_vector.z, error_vector.x);
 			angle_error.z = atan2f(error_vector.y, error_vector.x);
 
-			vec3<float> rotational_accel_error = nav::rotational_acceleration;
-			rotational_accel_error.y -= pid_ori_y.output;
-			rotational_accel_error.z -= pid_ori_z.output;
+			ang_acc_error = nav::rotational_acceleration;
+			ang_acc_error.y -= pid_ori_y.output;
+			ang_acc_error.z -= pid_ori_z.output;
 
-			pid_ori_y.updateWithDerivative(angle_error.y, ((-angle_error.y)-nav::rotational_velocity.y), 0.01);
-			pid_ori_z.updateWithDerivative(angle_error.z, ((-angle_error.z)-nav::rotational_velocity.z), 0.01);
+			pid_ori_y.updateWithDerivative(angle_error.y, ((-angle_error.y*3)-nav::rotational_velocity.y), 0.01);
+			pid_ori_z.updateWithDerivative(angle_error.z, ((-angle_error.z*3)-nav::rotational_velocity.z), 0.01);
 
 			ang_acc_out.y = pid_ori_y.output;
 			ang_acc_out.z = pid_ori_z.output;           
@@ -360,8 +360,8 @@ namespace control {
 			// cant divide by thrust if it's zero
 			if ( thrust > 0.1 ) {
 
-				// pid_ori_y.output-=rotational_accel_error.y;
-				// pid_ori_z.output-=rotational_accel_error.z;
+				pid_ori_y.output -= (ang_acc_error.y*0.25);
+				pid_ori_z.output -= (ang_acc_error.z*0.25);
 
 				angle_out.y = (pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x);
 				angle_out.z = (pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x);
@@ -383,7 +383,7 @@ namespace control {
 			perif::servo_1_position = clamp(perif::servo_1_position, servo_1_min, servo_1_max);
 			perif::servo_2_position = clamp(perif::servo_2_position, servo_2_min, servo_2_max);            
 		
-		// }
+		}
 	}
 
 };

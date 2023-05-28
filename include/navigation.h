@@ -207,8 +207,8 @@ namespace nav {
 	
 	};
 
-	float mass = 0.58;
-	vec3<float> moment_of_inertia = vec3(0.01, 0.02805354994, 0.02805354994);
+	float mass = 0.666;
+	vec3<float> moment_of_inertia = vec3(0.01, 0.03587682209, 0.03587682209);
 
 	const vec3<float> gravity(9.816, 0.0, 0.0);
 

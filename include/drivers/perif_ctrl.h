@@ -32,9 +32,19 @@ namespace perif {
 	bool pyro_2_fire = false;
 	bool pyro_3_fire = false;
 
+	bool firing_pyro_1 = false;
+	bool firing_pyro_2 = false;
+	bool firing_pyro_3 = false;
+
 	uint64_t pyro_1_fire_start = 0;
 	uint64_t pyro_2_fire_start = 0;
 	uint64_t pyro_3_fire_start = 0;
+
+	uint64_t camera_en_start = 0;
+	bool camera_is_on = false;
+
+	const system_state_t camera_enable_state = state_launch_detect;
+	const system_state_t camera_disable_state = state_landed;
 
 	uint8_t io_timing_idx = 0;
 
@@ -229,7 +239,18 @@ namespace perif {
 			case(_port_t::port_protocol::uart_1): { uart_init(uart1, 115200); break; }
 			case(_port_t::port_protocol::gpio): { break; }
 		}
+
+		// camera controls
+
+		gpio_init(qwiic_port2.pin0);
+		gpio_init(qwiic_port2.pin1);
 		
+		gpio_set_dir(qwiic_port2.pin0, 1);
+		gpio_set_dir(qwiic_port2.pin1, 1);
+		
+		gpio_put(qwiic_port2.pin0, 1);
+		gpio_put(qwiic_port2.pin1, 1);
+
 		// buzzer and neopixel
 
 		neopix_init(pin_neopixel);
@@ -264,14 +285,14 @@ namespace perif {
 			gpio_put(pin_pyro_3_fire, 0);
 		}
 
-		if ( pyro_1_en && pyro_1_fire && time_us_64() < pyro_1_fire_start+pyro_1_fire_dur_us ) { gpio_put(pin_pyro_1_fire, 1); }
-		else { gpio_put(pin_pyro_1_fire, 0); }
+		if ( pyro_1_en && pyro_1_fire && time_us_64() < pyro_1_fire_start+pyro_1_fire_dur_us ) { gpio_put(pin_pyro_1_fire, 1); firing_pyro_1 = true; }
+		else { gpio_put(pin_pyro_1_fire, 0); firing_pyro_1 = false; }
 
-		if ( pyro_2_en && pyro_2_fire && time_us_64() < pyro_2_fire_start+pyro_2_fire_dur_us ) { gpio_put(pin_pyro_2_fire, 1); }
-		else { gpio_put(pin_pyro_2_fire, 0); }
+		if ( pyro_2_en && pyro_2_fire && time_us_64() < pyro_2_fire_start+pyro_2_fire_dur_us ) { gpio_put(pin_pyro_2_fire, 1); firing_pyro_2 = true; }
+		else { gpio_put(pin_pyro_2_fire, 0); firing_pyro_2 = false; }
 
-		if ( pyro_3_en && pyro_3_fire && time_us_64() < pyro_3_fire_start+pyro_3_fire_dur_us ) { gpio_put(pin_pyro_3_fire, 1); }
-		else { gpio_put(pin_pyro_3_fire, 0); }
+		if ( pyro_3_en && pyro_3_fire && time_us_64() < pyro_3_fire_start+pyro_3_fire_dur_us ) { gpio_put(pin_pyro_3_fire, 1); firing_pyro_3 = true; }
+		else { gpio_put(pin_pyro_3_fire, 0); firing_pyro_3 = false; }
 
 		if ( vehicle_is_in_flight() ) {
 
@@ -307,6 +328,10 @@ namespace perif {
 
 		}
 
+		flags::perif_flags::pyro_1_fire = firing_pyro_1;
+		flags::perif_flags::pyro_2_fire = firing_pyro_2;
+		flags::perif_flags::pyro_3_fire = firing_pyro_3;
+		
 		#endif
 
 		// ============================================================================================
@@ -322,6 +347,7 @@ namespace perif {
 		voltage_switch_raw = adc_read();
 
 		flags::perif_flags::switch_sts = voltage_switch_raw > 3500;
+		flags::perif_flags::pyro_has_power = voltage_pyro_raw > 100;
 
 		// ============================================================================================
 		// neopixel and buzzer
@@ -354,6 +380,35 @@ namespace perif {
 
 		servo_write(24, servo_1_position);
 		servo_write(25, servo_2_position);
+
+		// ============================================================================================
+		// camera
+
+		if ( get_vehicle_state() == camera_enable_state && camera_en_start == 0 && !camera_is_on ) {
+			camera_en_start = time_us_64();
+			gpio_put(qwiic_port2.pin0, 0);
+			gpio_put(qwiic_port2.pin1, 0);
+		}
+
+		if ( get_vehicle_state() == camera_enable_state && time_us_64() > camera_en_start+200000 && camera_en_start != 0 ) {
+			camera_en_start = 0;
+			camera_is_on = 1;
+			gpio_put(qwiic_port2.pin0, 1);
+			gpio_put(qwiic_port2.pin1, 1);
+		}
+
+		if ( get_vehicle_state() == camera_disable_state && camera_en_start == 0 && time_us_64() > timing::get_t_landing()+5000000 && camera_is_on && timing::get_t_landing() != 0 ) {
+			camera_en_start = time_us_64();
+			gpio_put(qwiic_port2.pin0, 0);
+			gpio_put(qwiic_port2.pin1, 0);
+		}
+
+		if ( get_vehicle_state() == camera_disable_state && time_us_64() > camera_en_start+200000 && camera_en_start != 0 ) {
+			camera_en_start = 0;
+			camera_is_on = 0;
+			gpio_put(qwiic_port2.pin0, 1);
+			gpio_put(qwiic_port2.pin1, 1);
+		}
 
 	}
 

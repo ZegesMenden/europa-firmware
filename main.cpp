@@ -33,12 +33,14 @@ int main(void)
 		.state = &vehicle_state,
 		.time = &timing::RUNTIME,
 		.flag_gpio = &flags::perif_flags::gpio_sts,
+		.flag_pyro = &flags::perif_flags::pyro_sts,
 		.flag_state = &flags::state_flags::sts_bitmap,
 		.flag_control = &flags::control_flags::control_bitmap,
 		.flag_nav = &flags::nav_flags::nav_bitmap,
 		.active_state_timer = &state::current_state_timer,
 		.voltage_batt = &perif::voltage_batt_raw,
 		.voltage_pyro = &perif::voltage_pyro_raw,
+		.core_usage_percent = &timing::core_usage_percent,
 				
 		.position = &nav::position,
 		.velocity = &nav::velocity,
@@ -53,6 +55,8 @@ int main(void)
 		.baro_temp = &nav::temperature,
 
 		.mag = &nav::raw::mag,
+
+		.thrust = &control::thrust,
 
 		.target_vector = &control::target_vector,
 		.ang_acc_output = &control::ang_acc_out,
@@ -94,6 +98,8 @@ int main(void)
 		uint64_t t_start = time_us_64();
 
 		timing::update();
+		flags::update();
+
 		update_task(task_nav);
 		update_task(task_state);
 		update_task(task_control);
@@ -106,8 +112,6 @@ int main(void)
 			update_task(task_gps);
 		#endif
 
-		// if ( time_us_64() > 10000 ) { set_vehicle_state(state_landed); }
-
 		timing::average_runtime = (time_us_64()-t_start);
 
 		// wait for next cycle
@@ -115,4 +119,5 @@ int main(void)
 		if ( t_sleep > 0 ) { sleep_us(t_sleep); }
 
 	}
+
 }

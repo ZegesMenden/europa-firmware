@@ -49,8 +49,8 @@ namespace telemetry {
 
 		// sending telemetry data
 
-		uint8_t telem_speed = 4;
-		if ( vehicle_is_in_flight() ) { telem_speed = 2; }
+		uint8_t telem_speed = 10;
+		if ( vehicle_is_in_flight() ) { telem_speed = 5; }
 
 		if ( telem_idx >= telem_speed ) {
 

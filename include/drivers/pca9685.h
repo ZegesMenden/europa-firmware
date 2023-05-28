@@ -13,7 +13,7 @@ private:
 	uint8_t prescale = 0;
 
 	int write_to_device(uint8_t addr, uint8_t data) {
-		uint8_t buf[2] = { addr, data };
+		uint8_t buf[2] = { addr , data };
 		int ret = i2c_write_blocking(inst, i2c_addr, buf, 2, false);
 		return ret == 2;
 	}
@@ -22,6 +22,11 @@ private:
 		int reta = i2c_write_blocking(inst, i2c_addr, &addr, 1, false);
 		int retb = i2c_write_blocking(inst, i2c_addr, data, nbytes, false);
 		return (reta == 1)&(retb==nbytes);       
+	}
+
+	int write_buf_to_device(uint8_t *data, int nbytes) {
+		int retb = i2c_write_blocking(inst, i2c_addr, data, nbytes, false);
+		return (retb==nbytes);       
 	}
 
 	int read_from_device(uint8_t addr, uint8_t *ret) {
@@ -41,8 +46,27 @@ public:
 		
 	}
 
-	bool set_freq(int freq) {
+	bool set_osc_freq(int freq) {
 		return 1;
+	}
+
+	void set_pwm_freq(float freq) {
+		float prescaleval = ((osc_freq / (freq * 4096.0)) + 0.5) - 1;
+		if (prescaleval < 3)
+			prescaleval = 3;
+		if (prescaleval > 255)
+			prescaleval = 255;
+		uint8_t prescale = (uint8_t)prescaleval;
+
+		uint8_t oldmode;
+		read_from_device(0x0, &oldmode);
+
+		uint8_t newmode = (oldmode & (~0x80)) | 0x10;
+		write_to_device(0x00, newmode);
+		write_to_device(0xfe, prescale);
+		write_to_device(0x00, oldmode);
+		sleep_ms(5);
+		write_to_device(0x0, oldmode | 0x80 | 0x20 );
 	}
 
 	/// @brief 
@@ -51,8 +75,8 @@ public:
 	/// @param t_off time for pulse to end
 	/// @return 
 	bool set_pin_timing_raw(uint8_t idx, uint16_t t_on, uint16_t t_off) {
-		uint8_t buf[4] = { (uint8_t)t_on, uint8_t(t_on>>8), (uint8_t)t_off, uint8_t(t_off>>8) };
-		return write_buf_to_device(0x06+4*idx, buf, 4);
+		uint8_t buf[5] = { 0x06+4*idx, (uint8_t)t_on, uint8_t(t_on>>8), (uint8_t)t_off, uint8_t(t_off>>8) };
+		return write_buf_to_device(buf, 5);
 	}
 
 	bool set_pin(uint8_t idx, uint16_t val) {

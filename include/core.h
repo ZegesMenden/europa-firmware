@@ -217,13 +217,13 @@ namespace flags {
 										(control_flags::burn_alt_over_safe_thresh) |
 										(control_flags::core1_communication_failure);
 
-		perif_flags::pyro_sts = (perif_flags::pyro_has_power<<7) |
-								(perif_flags::pyro_1_fire<<6) |
-								(perif_flags::pyro_2_fire<<5) |
+		perif_flags::pyro_sts = (perif_flags::pyro_has_power<<1) |
+								(perif_flags::pyro_1_fire<<2) |
+								(perif_flags::pyro_2_fire<<3) |
 								(perif_flags::pyro_3_fire<<4) |
-								(perif_flags::pyro_1_cont<<3) |
-								(perif_flags::pyro_2_cont<<2) |
-								(perif_flags::pyro_3_cont<<1);
+								(perif_flags::pyro_1_cont<<5) |
+								(perif_flags::pyro_2_cont<<6) |
+								(perif_flags::pyro_3_cont<<7);
 
 		perif_flags::gpio_sts = perif_flags::switch_sts;
 
@@ -241,6 +241,8 @@ namespace timing {
 	uint64_t T_apogee = 0;
 
 	uint64_t average_runtime = 0;
+
+	uint8_t core_usage_percent = 0;
 
 	void set_MET(uint64_t t) { MET = t; }
 	uint64_t get_MET() { return MET; }
@@ -262,6 +264,8 @@ namespace timing {
 		RUNTIME = time_us_64();
 
 		if ( get_t_launch() > 0 ) { set_MET(time_us_64()-get_t_launch()); }
+
+		core_usage_percent = (uint8_t)(average_runtime/100);
 
 	}
 
@@ -400,9 +404,9 @@ struct _port_t {
 
 _port_t qwiic_port0 = { 14,                             // pin0
 						15,                             // pin1
-						_port_t::port_protocol::gpio,  // protocol
+						_port_t::port_protocol::gpio,   // protocol
 						GPIO_FUNC_SIO,                  // gpio func
-						true};                         // bitbang flag
+						true};                          // bitbang flag
 
 _port_t qwiic_port1 = { 13,                             // pin0
 						12,                             // pin1
@@ -412,15 +416,15 @@ _port_t qwiic_port1 = { 13,                             // pin0
 
 _port_t qwiic_port2 = { 9,                              // pin0
 						8,                              // pin1
-						_port_t::port_protocol::uart_1, // protocol
-						GPIO_FUNC_UART,                 // gpio func
-						false};                         // bitbang flag
+						_port_t::port_protocol::gpio, // protocol
+						GPIO_FUNC_SIO,                 // gpio func
+						true};                         // bitbang flag
 
 _port_t qwiic_port3 = { 1,                              // pin0
 						0,                              // pin1
-						_port_t::port_protocol::uart_0, // protocol
-						GPIO_FUNC_UART,                 // gpio func
-						false};                         // bitbang flag
+						_port_t::port_protocol::uart_0,   // protocol
+						GPIO_FUNC_UART,                  // gpio func
+						false};                          // bitbang flag
 
 // ============================================================================
 // functions that dont really belong anywhere else

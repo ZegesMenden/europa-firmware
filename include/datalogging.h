@@ -17,6 +17,7 @@ namespace datalog {
 		uint64_t time;
 		system_state_t state;
 		uint8_t flag_gpio;
+		uint8_t flag_pyro;
 		uint8_t flag_state;
 		uint8_t flag_control;
 		uint8_t flag_nav;
@@ -30,7 +31,6 @@ namespace datalog {
 		vec3<float> position;
 		vec3<float> velocity;
 		vec3<float> accel_bias;
-
 		quat<float> rotation;
 		
 		vec3<int16_t> acceleration;
@@ -42,6 +42,8 @@ namespace datalog {
 
 		vec3<int16_t> mag;
 		
+		float thrust;
+
 		vec3<float> target_vector;
 		vec3<float> ang_acc_output;
 		vec3<float> ang_acc_error;
@@ -56,11 +58,12 @@ namespace datalog {
 		float simulation_time_est;
 		uint32_t simulation_time_taken;
 
-		uint8_t extra[67];
+		uint8_t extra[62];
 
 	} points;
 
 	int a = sizeof(points);
+	static_assert(sizeof(points) == 256, "data points have more than 256 bytes!");
 
 	typedef union log_ptrs_t {
 		struct points {
@@ -68,6 +71,7 @@ namespace datalog {
 			system_state_t* state;
 			uint64_t* time;
 			uint8_t* flag_gpio;
+			uint8_t* flag_pyro;
 			uint8_t* flag_state;
 			uint8_t* flag_control;
 			uint8_t* flag_nav;
@@ -92,6 +96,8 @@ namespace datalog {
 
 			vec3<int16_t>* mag;
 
+			float *thrust;
+
 			vec3<float> *target_vector;
 			vec3<float> *ang_acc_output;
 			vec3<float> *ang_acc_error;
@@ -108,7 +114,7 @@ namespace datalog {
 
 		} points;
 
-		void *raw[32] = {NULL};
+		void *raw[34] = {NULL};
 
 		static_assert(sizeof(points) == sizeof(raw));
 	} log_ptrs_t;
@@ -177,12 +183,11 @@ namespace datalog {
 		
 		#ifdef DATALOG_EN
 
-		flags::update();
-
 		points.padding = 0x0011223344556677;
 		points.time						= *ptrs.points.time;
 		points.state					= *ptrs.points.state;
 		points.flag_gpio				= *ptrs.points.flag_gpio;
+		points.flag_pyro 				= *ptrs.points.flag_pyro;
 		points.flag_state				= *ptrs.points.flag_state;
 		points.flag_control				= *ptrs.points.flag_control;
 		points.flag_nav					= *ptrs.points.flag_nav;
@@ -272,8 +277,8 @@ namespace datalog {
 
 		spi_set_baudrate(spi0, spi_flash_baud);     
 
-		flash_erase_chip(pin_cs_flash);
-		while(flash_busy(pin_cs_flash)) {;}
+		// flash_erase_chip(pin_cs_flash);
+		// while(flash_busy(pin_cs_flash)) {;}
 		
 		find_flash_start();
 
@@ -298,7 +303,7 @@ namespace datalog {
 		// printf("FLASHDATA\n");
 		// printf("nlines%i\n", page-start_page);
 
-		for ( int i = start_page; i < page; i++ ) {
+		for ( int i = 0; i < start_page; i++ ) {
 			
 			flash_read_page(pin_cs_flash, i, (uint8_t*)&points);
 
@@ -321,14 +326,23 @@ namespace datalog {
 
 			printf("%llu,", points.time);
 			printf("%i,",   points.state);
+			printf("%i,",   points.core_usage_percent);
+			// printf("%i,",   (points.flag_pyro&1));
+			printf("%i,",   (points.flag_pyro&0b10)>>1);
+			printf("%i,",   (points.flag_pyro&0b100)>>2);
+			printf("%i,",   (points.flag_pyro&0b1000)>>3);
+			printf("%i,",   (points.flag_pyro&0b10000)>>4);
+			printf("%i,",   (points.flag_pyro&0b100000)>>5);
+			printf("%i,",   (points.flag_pyro&0b1000000)>>6);
+			printf("%i,",   (points.flag_pyro&0b10000000)>>7);
 			printf("%i,",   (points.flag_gpio&1));
-			printf("%i,",   (points.flag_gpio&0b10)>>1);
-			printf("%i,",   (points.flag_gpio&0b100)>>2);
-			printf("%i,",   (points.flag_gpio&0b1000)>>3);
-			printf("%i,",   (points.flag_gpio&0b10000)>>4);
-			printf("%i,",   (points.flag_gpio&0b100000)>>5);
-			printf("%i,",   (points.flag_gpio&0b1000000)>>6);
-			printf("%i,",   (points.flag_gpio&0b10000000)>>7);
+			// printf("%i,",   (points.flag_gpio&0b10)>>1);
+			// printf("%i,",   (points.flag_gpio&0b100)>>2);
+			// printf("%i,",   (points.flag_gpio&0b1000)>>3);
+			// printf("%i,",   (points.flag_gpio&0b10000)>>4);
+			// printf("%i,",   (points.flag_gpio&0b100000)>>5);
+			// printf("%i,",   (points.flag_gpio&0b1000000)>>6);
+			// printf("%i,",   (points.flag_gpio&0b10000000)>>7);
 			printf("%i,",   (points.flag_state&1));
 			printf("%i,",   (points.flag_state&0b10)>>1);
 			printf("%i,",   (points.flag_state&0b100)>>2);
