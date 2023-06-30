@@ -7,7 +7,6 @@
 #include "hardware/i2c.h"
 #include "drivers/ws2812.pio.h"
 #include "drivers/buzzer.h"
-#include "drivers/pca9685.h"
 #include "drivers/servo.h"
 
 #pragma once
@@ -17,8 +16,6 @@
 // verify pyro code
 
 namespace perif {
-
-	pca9685 pca(0b10011110, i2c0);
 
 	uint16_t voltage_pyro_raw = 0;
 	uint16_t voltage_batt_raw = 0;
@@ -372,9 +369,13 @@ namespace perif {
 			buzzer_en |= ( io_timing_idx > (100/buzzer_freq)*i && io_timing_idx < ((100/buzzer_freq)*i)+10 );
 		}
 
+		#ifdef USE_BUZZER
 		if (buzzer_en) { buzzer_tone(pin_buzzer, buzzer_tone_from_state(get_vehicle_state())); }
 		else { buzzer_disable(pin_buzzer); }
-	   
+		#else
+		buzzer_disable(pin_buzzer);
+		#endif
+	
 		// ============================================================================================
 		// servos
 

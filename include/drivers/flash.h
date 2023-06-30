@@ -5,6 +5,8 @@
 #include <hardware/spi.h>
 #include <hardware/dma.h>
 #include <hardware/gpio.h>
+#include <hardware/flash.h>
+#include <pico/multicore.h>
 
 enum flash_commands {
   write_enable    = 0x06,
@@ -23,6 +25,8 @@ int flash_send_byte(uint8_t data) {
 
 bool flash_busy(int cs) {
 
+	#ifndef USE_INTERNAL_FLASH
+
 	gpio_put(cs, 1);
 	gpio_put(cs, 0);
 
@@ -34,10 +38,16 @@ bool flash_busy(int cs) {
 	
 	return (buf&1);
 
+	#endif
+
+	return 0;
+
 }
 
 bool get_jdec(uint cs, uint8_t *b1, uint8_t *b2, uint8_t *b3) {
 	
+	#ifndef USE_INTERNAL_FLASH
+
 	if (flash_busy(cs)) {return 0;}
 
 	gpio_put(cs, 1);
@@ -50,12 +60,16 @@ bool get_jdec(uint cs, uint8_t *b1, uint8_t *b2, uint8_t *b3) {
 	spi_read_blocking(spi0, 0, b3, 1);
 	
 	gpio_put(cs, 1);
+
+	#endif
 	
 	return 1;
 
 }
 
 bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
+	
+	#ifndef USE_INTERNAL_FLASH
 
 	while(flash_busy(cs)) {;}
 
@@ -83,10 +97,24 @@ bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
 	return err > 1 ? 1 : 0;
 
+	#else
+
+	multicore_lockout_start_blocking();
+
+	flash_range_program( (1024 * 512) + page_number*256, buf, 256);
+
+	multicore_lockout_end_blocking();
+
+	return 1;
+
+	#endif
+
 }
 
 // poggers DMA??
 bool flash_dma_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
+
+	#ifndef USE_INTERNAL_FLASH
 
 	while(flash_busy(cs)) {;}
 
@@ -129,9 +157,15 @@ bool flash_dma_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
 	return 1;
 
+	#endif
+
+	return 1;
+
 }
 
 bool flash_read_page(uint cs, uint16_t page_number, uint8_t *buf) {
+
+	#ifndef USE_INTERNAL_FLASH
 
   	while(flash_busy(cs)) {;}
 
@@ -149,9 +183,23 @@ bool flash_read_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
 	return err > 1 ? 1 : 0;
 
+	#else
+
+	multicore_lockout_start_blocking();
+
+	memcpy(buf, (uint8_t*) ( XIP_BASE + ( (1024 * 512) + page_number*256) ), 256);
+
+	multicore_lockout_end_blocking();
+
+	return 1;
+
+	#endif
+
 }
 
 bool flash_read_bytes(uint cs, uint16_t page_number, uint8_t *buf, uint n_bytes) {
+
+	#ifndef USE_INTERNAL_FLASH
 
   	while(flash_busy(cs)) {;}
 
@@ -169,9 +217,15 @@ bool flash_read_bytes(uint cs, uint16_t page_number, uint8_t *buf, uint n_bytes)
 
 	return err > 1 ? 1 : 0;
 
+	#endif
+
+	return 1;
+
 }
 
 bool flash_erase_chip(uint cs) {
+
+	#ifndef USE_INTERNAL_FLASH
 
 	// if ( flash_busy(cs) ) {return 0;}
 	while(flash_busy(cs)) {;}
@@ -194,6 +248,17 @@ bool flash_erase_chip(uint cs) {
 	// flash_send_byte(WB_WRITE_DISABLE);
 
 	// gpio_put(cs, 1);
+
+	#else
+
+	multicore_lockout_start_blocking();
+
+	// erase 3MB of flash (0.5 - 3.5MB of 4 total)
+	flash_range_erase((1024 * 512), 1024*1024*3);
+
+	multicore_lockout_end_blocking();
+
+	#endif
 
 	return 1;
 

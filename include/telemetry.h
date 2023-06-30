@@ -1,5 +1,6 @@
 #include "core.h"
 #include "navigation.h"
+#include "datalogging.h"
 #include "drivers/radio.h"
 #pragma once
 
@@ -107,10 +108,10 @@ namespace telemetry {
 						nav::velocity.y,
 						nav::velocity.z,
 						flags::perif_flags::pyro_sts,
-						gps::lat,
-						gps::lon,
-						gps::hdop,
-						gps::n_sattelites);
+						0.0,
+						0.0,
+						0.0,
+						0.0);
 
 			#endif
 			
@@ -166,9 +167,9 @@ namespace telemetry {
 
 		if ( radio::radio_rx_buf_position ) {
 
-			printf("packet recieved, contents:\n");
-			for ( int i = 0; i < radio::radio_rx_buf_position; i++ ) { printf("%c", radio::radio_rx_buf[i]); }
-			printf("\n\n");
+			// printf("packet recieved, contents:\n");
+			// for ( int i = 0; i < radio::radio_rx_buf_position; i++ ) { printf("%c", radio::radio_rx_buf[i]); }
+			// printf("\n\n");
 			int msg_start_position = -1;
 
 			char msg_id;
@@ -181,30 +182,29 @@ namespace telemetry {
 				if ( radio::radio_rx_buf[i] == '$' ) { msg_start_position = i; }
 				if ( msg_start_position != -1 ) {
 
-					if ( i == msg_start_position+1 ) { msg_id = radio::radio_rx_buf[i]; printf("id: %c (%x)\n", msg_id, msg_id); }
-					if ( i == msg_start_position+2 ) { msg_payload = radio::radio_rx_buf[i]; printf("payload: %c (%x)\n", msg_id, msg_id);}
+					if ( i == msg_start_position+1 ) {
+						 msg_id = radio::radio_rx_buf[i]; 
+						//  printf("id: %c (%x)\n", msg_id, msg_id); 
+					}
+
+					if ( i == msg_start_position+2 ) { 
+						msg_payload = radio::radio_rx_buf[i]; 
+						// printf("payload: %c (%x)\n", msg_id, msg_id);
+					}
+
 					if ( i == msg_start_position+3 ) { 
 						msg_checksum = radio::radio_rx_buf[i]; 
-						printf("checksum: %c (%x)\n", msg_checksum, msg_checksum);
+						// printf("checksum: %c (%x)\n", msg_checksum, msg_checksum);
 						checksum_is_valid = (msg_checksum) == (msg_id+msg_payload);
-						printf("%s", checksum_is_valid ? "checksum is valid\n" : "checksum failed\n");
-						printf("checksum value: %x\ncalculated value: %x\n", msg_checksum, (msg_id+msg_payload));
+						// printf("%s", checksum_is_valid ? "checksum is valid\n" : "checksum failed\n");
+						// printf("checksum value: %x\ncalculated value: %x\n", msg_checksum, (msg_id+msg_payload));
 						if ( checksum_is_valid ) {
 							process_message(msg_id, msg_payload);
 						}
-
 					}
-					
-
 				}
-
 			}
 			radio::radio_rx_buf_position = 0;
-
 		}
-
-		
-
 	}
-
 }

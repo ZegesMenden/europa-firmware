@@ -27,6 +27,10 @@ namespace core1_interface {
 
 		bool in_operation = false;
 
+		#ifdef USE_INTERNAL_FLASH
+			multicore_lockout_victim_init();
+		#endif
+		
 		multicore_fifo_push_blocking(CORE1_INIT_SUCESS);
 
 		while(1) {

@@ -56,6 +56,7 @@ namespace simulation {
 		float position;
 		float velocity;
 		float acceleration;
+		float deviation_from_up;
 		float mass;
 		float time;
 	} ascent_sim_input;

@@ -230,6 +230,12 @@ namespace nav {
 	vec3<float> covariance_velocity;
 	vec3<float> covariance_acceleration;
 
+	float lat;
+	float lon;
+
+	float gps_horizontal_accuracy;
+	uint8_t gps_n_sats;
+
 	float lat_initial;
 	float lon_initial;
 
@@ -336,20 +342,10 @@ namespace nav {
 		baro.set_reg(0x37, 0x80);
 		baro.set_reg(0x37, 0x81);
 		
-		// printf("Configuring barometer\n");
-		// t_start = time_us_64();
-		// sts = 0;
-		// while ( time_us_64() < t_start + 5000 ) {
-		// 	if ( baro.set_baro_odr(0x12) ) { sts = 1; break; }
-		// }
-		// if ( !sts ) { boot_panic("Failed to configure Barometer");  }
-		
-		// t_start = time_us_64();
-		// sts = 0;
-		// while ( time_us_64() < t_start + 5000 ) {
-		// 	if ( baro.set_osr(0b10, 0b0) ) { sts = 1; break; }
-		// }
-		// if ( !sts ) { boot_panic("Failed to configure Barometer");  }
+		printf("initializing mag\n");
+
+		if ( !mag.init() ) { boot_panic("Failed to initialize mag"); return 0; }
+		else { printf("done\n"); }
 
 		printf("Done\n\n");	
 
@@ -404,50 +400,57 @@ namespace nav {
 
 		#ifdef USE_GPS
 
-		if ( gps::lat != 0.0 && gps::lon != 0.0 && gps::gps_has_new_data && gps::n_sattelites > 5 ) {
+		if ( flags::nav_flags::gps_drdy ) {
+			lat = float(gps::gps_pvt_raw.lat)*1e-7;
+			lon = float(gps::gps_pvt_raw.lon)*1e-7;
+			gps_horizontal_accuracy = float(gps::gps_pvt_raw.h_acc)*1e-3;
+			gps_n_sats = gps::gps_pvt_raw.n_sat;
+			flags::nav_flags::gps_drdy = false;
+			
+			if ( lat != 0.0 && lon != 0.0 && gps_n_sats > 5 ) {
 
-			if ( gps_n_zero_offset_measurements < 100 && !gps_zero_offset_lock ) {
+				if ( gps_n_zero_offset_measurements < 100 && !gps_zero_offset_lock ) {
 
-				gps_n_zero_offset_measurements++;
+					gps_n_zero_offset_measurements++;
 
-				if ( lat_initial == 0 ) { 
-					lat_initial = gps::lat*PI/180.f; 
-					lon_initial = gps::lon*PI/180.f; 
-				}
-				else {
+					if ( lat_initial == 0 ) { 
+						lat_initial = lat*PI/180.f; 
+						lon_initial = lon*PI/180.f; 
+					}
+					else {
 
-					float measurement_displacement = DBPf(lat_initial/gps_n_zero_offset_measurements, lon_initial/gps_n_zero_offset_measurements, gps::lat, gps::lon);
-					if ( measurement_displacement > 5 ) { 
-						gps_n_zero_offset_measurements = 0;
-						lat_initial = 0;
-						lon_initial = 0;
-					} else {
-						lat_initial += gps::lat*PI/180.f;
-						lon_initial += gps::lon*PI/180.f;
+						float measurement_displacement = DBPf(lat_initial/gps_n_zero_offset_measurements, lon_initial/gps_n_zero_offset_measurements, lat, lon);
+						if ( measurement_displacement > 5 ) { 
+							gps_n_zero_offset_measurements = 0;
+							lat_initial = 0;
+							lon_initial = 0;
+						} else {
+							lat_initial += lat*PI/180.f;
+							lon_initial += lon*PI/180.f;
+						}
+
 					}
 
+					if ( gps_n_zero_offset_measurements >= 100 ) {
+						gps_zero_offset_lock = true;
+						lat_initial /= 100.0f;
+						lon_initial /= 100.0f;
+					}
+
+				} else {
+
+					float distance_from_launchpad = DBPf(lat_initial, lon_initial, lat*PI/180.f, lon*PI/180.f);
+					float angle_from_launchpad = CBPf(lat_initial, lon_initial, lat*PI/180.f, lon*PI/180.f);
+
+					// position_gps.x = gps_alt - baro_alt_offs;
+					position_gps.y = distance_from_launchpad * cosf(angle_from_launchpad);
+					position_gps.z = distance_from_launchpad * sinf(angle_from_launchpad);
+
+					kalman_y.update_position(position_gps.y);
+					kalman_z.update_position(position_gps.z);
+					
 				}
-
-				if ( gps_n_zero_offset_measurements >= 100 ) {
-					gps_zero_offset_lock = true;
-					lat_initial /= 100.0f;
-					lon_initial /= 100.0f;
-				}
-
-			} else {
-
-				float distance_from_launchpad = DBPf(lat_initial, lon_initial, gps::lat*PI/180.f, gps::lon*PI/180.f);
-				float angle_from_launchpad = CBPf(lat_initial, lon_initial, gps::lat*PI/180.f, gps::lon*PI/180.f);
-
-				// position_gps.x = gps_alt - baro_alt_offs;
-				position_gps.y = distance_from_launchpad * cosf(angle_from_launchpad);
-				position_gps.z = distance_from_launchpad * sinf(angle_from_launchpad);
-
-				kalman_y.update_position(position_gps.y);
-				kalman_z.update_position(position_gps.z);
-				
 			}
-
 		}
 
 		#else

@@ -3,12 +3,12 @@
 #include "control.h"
 #include "state_ctrl.h"
 #include "radio.h"
+
 #pragma once
 
 namespace datalog {
 
 	#pragma pack(1)
-
 
 	struct points {
 		
@@ -41,6 +41,13 @@ namespace datalog {
 		float baro_temp;
 
 		vec3<int16_t> mag;
+
+		float lat;
+		float lon;
+		float gps_pos_y;
+		float gps_pos_z;
+		float h_acc;
+		uint8_t n_sats;
 		
 		float thrust;
 
@@ -51,6 +58,11 @@ namespace datalog {
 
 		float burn_alt;
 		float comp;
+
+		float desired_accel;
+		float throttle_ratio;
+		float divert_angle;
+
 		float simulation_energy_est;
 		float simulation_work_est;
 		float simulation_position_est;
@@ -58,14 +70,13 @@ namespace datalog {
 		float simulation_time_est;
 		uint32_t simulation_time_taken;
 
-		uint8_t extra[62];
+		uint8_t extra[29];
 
 	} points;
 
-	int a = sizeof(points);
 	static_assert(sizeof(points) == 256, "data points have more than 256 bytes!");
 
-	typedef union log_ptrs_t {
+	union {
 		struct points {
 
 			system_state_t* state;
@@ -96,6 +107,13 @@ namespace datalog {
 
 			vec3<int16_t>* mag;
 
+			float* lat;
+			float* lon;
+			float* gps_pos_y;
+			float* gps_pos_z;
+			float* h_acc;
+			uint8_t* n_sats;
+
 			float *thrust;
 
 			vec3<float> *target_vector;
@@ -105,6 +123,11 @@ namespace datalog {
 
 			float* burn_alt;
 			float* comp;
+
+			float* desired_accel;
+			float* throttle_ratio;
+			float* divert_angle;
+
 			float* simulation_energy_est;
 			float* simulation_work_est;
 			float* simulation_position_est;
@@ -114,10 +137,10 @@ namespace datalog {
 
 		} points;
 
-		void *raw[34] = {NULL};
+		void *raw[43] = {NULL};
 
 		static_assert(sizeof(points) == sizeof(raw));
-	} log_ptrs_t;
+	} ptrs;
 
 	#pragma pop()
 
@@ -129,42 +152,75 @@ namespace datalog {
 
 	uint8_t flash_errors = 0;
 
-	log_ptrs_t ptrs;
-
 	bool start_flash_export = false;
 
 	uint16_t find_flash_start() {
 
 		#ifdef DATALOG_EN
 
-		int last_page_was_valid = 0;
-		uint8_t read_buf[256] = {0};
+		#ifndef USE_INTERNAL_FLASH
 
-		spi_set_baudrate(spi0, spi_flash_baud);
+			int last_page_was_valid = 0;
+			uint8_t read_buf[256] = {0};
 
-		for ( int i = 0; i < 15625; i++ ) {
-			
-			while(flash_busy(pin_cs_flash)) { ; }
-			if (!flash_read_page(pin_cs_flash, i, read_buf) ) { return -1; }
+			spi_set_baudrate(spi0, spi_flash_baud);
 
-			page = i;
-			start_page = i;
-			bool valid_page = 1;
-			for ( int j = 0; j < 256; j++ ) { valid_page &= read_buf[j]; }
-			if ( valid_page ) { 
-				last_page_was_valid ++;
-				if ( last_page_was_valid > 2 ) { 
-					page = i-1;
-					start_page = i-1;
-					return page; 
-				}             
+			for ( int i = 0; i < 15625; i++ ) {
+				
+				while(flash_busy(pin_cs_flash)) { ; }
+				if (!flash_read_page(pin_cs_flash, i, read_buf) ) { return -1; }
+
+				page = i;
+				start_page = i;
+				bool valid_page = 1;
+				for ( int j = 0; j < 256; j++ ) { valid_page &= read_buf[j]; }
+				if ( valid_page ) { 
+					last_page_was_valid ++;
+					if ( last_page_was_valid > 2 ) { 
+						page = i-1;
+						start_page = i-1;
+						return page; 
+					}             
+				}
+				
 			}
 			
-		}
-		
-		spi_set_baudrate(spi0, spi_default_baud);
+			spi_set_baudrate(spi0, spi_default_baud);
 
-		return page;
+			return page;
+
+		#else
+
+			multicore_lockout_start_blocking();
+
+			int last_page_was_valid = 0;
+			uint8_t read_buf[256] = {0};
+
+			for ( int i = 0; i < 12288; i++ ) {
+				
+				if (!flash_read_page(pin_cs_flash, i, read_buf) ) { return -1; }
+
+				page = i;
+				start_page = i;
+				bool valid_page = 1;
+				for ( int j = 0; j < 256; j++ ) { valid_page &= read_buf[j]; }
+				if ( valid_page ) { 
+					last_page_was_valid ++;
+					if ( last_page_was_valid > 2 ) { 
+						page = i-1;
+						start_page = i-1;
+						return page; 
+					}             
+				}
+				
+			}
+
+			multicore_lockout_end_blocking();
+
+			return page;
+
+
+		#endif
 
 		#endif
 
@@ -174,7 +230,7 @@ namespace datalog {
 
 	bool valid_pointers() {
 		#ifdef DATALOG_EN
-		for ( int i = 0; i < sizeof(ptrs.raw); i++ ) { if ( ptrs.raw[i] == NULL ) { return 0; } }
+			for ( int i = 0; i < sizeof(ptrs.raw); i++ ) { if ( ptrs.raw[i] == NULL ) { return 0; } }
 		#endif
 		return 1;
 	}
@@ -210,6 +266,13 @@ namespace datalog {
 
 		points.mag                  	= *ptrs.points.mag;
 
+		points.lat						= *ptrs.points.lat;
+		points.lon						= *ptrs.points.lon;
+		points.gps_pos_y				= *ptrs.points.gps_pos_y;
+		points.gps_pos_z				= *ptrs.points.gps_pos_z;
+		points.h_acc					= *ptrs.points.h_acc;
+		points.n_sats					= *ptrs.points.n_sats;
+
 		points.target_vector        	= *ptrs.points.target_vector;
 		points.ang_acc_output       	= *ptrs.points.ang_acc_output;
 		points.ang_acc_error        	= *ptrs.points.ang_acc_error;
@@ -217,6 +280,11 @@ namespace datalog {
 
 		points.burn_alt             	= *ptrs.points.burn_alt;
 		points.comp                 	= *ptrs.points.comp;
+
+		points.desired_accel			= *ptrs.points.desired_accel;
+		points.throttle_ratio			= *ptrs.points.throttle_ratio;
+		points.divert_angle				= *ptrs.points.divert_angle;
+
 		points.simulation_energy_est	= *ptrs.points.simulation_energy_est;
 		points.simulation_work_est     	= *ptrs.points.simulation_work_est;
 		points.simulation_position_est 	= *ptrs.points.simulation_position_est;
@@ -228,30 +296,6 @@ namespace datalog {
 		spi_set_baudrate(spi0, spi_flash_baud);
 		while(flash_busy(pin_cs_flash)) { ; }
 		if ( !flash_write_page(pin_cs_flash, page, (uint8_t*)&points) ) { flash_errors++; }
-
-		// uint8_t buf[256];
-
-		// if ( !flash_read_page(pin_cs_flash, page, buf) ) { flash_errors++; }
-		// bool matches = true;
-
-		// for ( int i = i; i < 256; i++ ) { matches &= (buf[i]==((uint8_t*)&points)[i]); }   
-
-		// if ( !matches ) { 
-		//     printf("WARNING: datalog mismatch!\n"); 
-			
-		//     printf("written data:\n");
-		//     for ( int i = 0; i < 8; i++ ) {
-		//         int j = i*8;
-		//         printf("%x,%x,%x,%x,%x,%x,%x,%x\n", buf[j],buf[j+1],buf[j+2],buf[j+3],buf[j+4],buf[j+5],buf[j+6],buf[j+7]);
-		//     }
-
-		//     printf("re-read data:\n");
-		//     for ( int i = 0; i < 8; i++ ) {
-		//         int j = i*8;
-		//         printf("%x,%x,%x,%x,%x,%x,%x,%x\n", ((uint8_t*)&points)[j],((uint8_t*)&points)[j+1],((uint8_t*)&points)[j+2],((uint8_t*)&points)[j+3],((uint8_t*)&points)[j+4],((uint8_t*)&points)[j+5],((uint8_t*)&points)[j+6],((uint8_t*)&points)[j+7]);
-		//     }
-		// }
-
 		spi_set_baudrate(spi0, spi_default_baud);
 
 		#endif
@@ -263,31 +307,40 @@ namespace datalog {
 	bool init() {
 		#ifdef DATALOG_EN
 
-		uint8_t a = 0;
-		uint8_t b = 0;
-		uint8_t c = 0;
-		get_jdec(pin_cs_flash, &a, &b, &c);
+		#ifndef USE_INTERNAL_FLASH
+			uint8_t a = 0;
+			uint8_t b = 0;
+			uint8_t c = 0;
+			get_jdec(pin_cs_flash, &a, &b, &c);
 
-		printf("%i, %i, %i\n", a, b, c);
+			printf("%i, %i, %i\n", a, b, c);
 
-		if ( (a == 0) && (b == 0) && (c == 0) ) { boot_panic("no flash chip found!\n"); return 0; }
+			if ( (a == 0) && (b == 0) && (c == 0) ) { boot_panic("no flash chip found!\n"); return 0; }
+		#endif
 
 		printf("============================================================================\n");
 		printf("locating flash start page...\n");
 
 		spi_set_baudrate(spi0, spi_flash_baud);     
-
-		// flash_erase_chip(pin_cs_flash);
-		// while(flash_busy(pin_cs_flash)) {;}
 		
 		find_flash_start();
 
-		printf("start page: %i\nremaining pages: %i (%.1f%c / %.1fs)\n", page, (15625-page), 100.0f - 100.f*(float(page)/float(15625)), '%', float(15625-page)/100.f);
-		printf("flash storage: [");
-		for ( int i = 0; i < 20; i++ ) {
-			if ( i*5 < (100.f*(float(page)/float(15625))) ) { printf("="); }
-			else { printf(" "); }
-		}
+		#ifndef USE_INTERNAL_FLASH
+			printf("start page: %i\nremaining pages: %i (%.1f%c / %.1fs)\n", page, (15625-page), 100.0f - 100.f*(float(page)/float(15625)), '%', float(15625-page)/100.f);
+			printf("flash storage: [");
+			for ( int i = 0; i < 20; i++ ) {
+				if ( i*5 < (100.f*(float(page)/float(15625))) ) { printf("="); }
+				else { printf(" "); }
+			}
+		#else
+			printf("start page: %i\nremaining pages: %i (%.1f%c / %.1fs)\n", page, (12288-page), 100.0f - 100.f*(float(page)/float(12288)), '%', float(12288-page)/100.f);
+			printf("flash storage: [");
+			for ( int i = 0; i < 20; i++ ) {
+				if ( i*5 < (100.f*(float(page)/float(12288))) ) { printf("="); }
+				else { printf(" "); }
+			}
+		#endif
+
 		printf("]\n");
 		printf("============================================================================\n");
 
@@ -300,9 +353,6 @@ namespace datalog {
 	void export_flash_data_blocking() {
 		#ifdef DATALOG_EN
 
-		// printf("FLASHDATA\n");
-		// printf("nlines%i\n", page-start_page);
-
 		for ( int i = 0; i < start_page; i++ ) {
 			
 			flash_read_page(pin_cs_flash, i, (uint8_t*)&points);
@@ -313,8 +363,7 @@ namespace datalog {
 			vec3<float> target_vec = points.target_vector;
 
 			vec3<float> rotation_euler = rotation.euler_angles() * 180.0f/PI;
-			vec3<float> accel_l = points.acceleration;
-			accel_l *= 0.009765625f;
+			vec3<float> accel_l = points.acceleration * 0.009765625f;
 			vec3<float> accel_i = rotation.rotate_vec(accel_l);
 			vec3<float> accel_i_debiased = accel_i - points.accel_bias;
 			vec3<float> accel_l_debiased = rotation.conjugate().rotate_vec(accel_i_debiased);
@@ -327,111 +376,140 @@ namespace datalog {
 			printf("%llu,", points.time);
 			printf("%i,",   points.state);
 			printf("%i,",   points.core_usage_percent);
-			// printf("%i,",   (points.flag_pyro&1));
-			printf("%i,",   (points.flag_pyro&0b10)>>1);
-			printf("%i,",   (points.flag_pyro&0b100)>>2);
-			printf("%i,",   (points.flag_pyro&0b1000)>>3);
-			printf("%i,",   (points.flag_pyro&0b10000)>>4);
-			printf("%i,",   (points.flag_pyro&0b100000)>>5);
-			printf("%i,",   (points.flag_pyro&0b1000000)>>6);
-			printf("%i,",   (points.flag_pyro&0b10000000)>>7);
-			printf("%i,",   (points.flag_gpio&1));
-			// printf("%i,",   (points.flag_gpio&0b10)>>1);
-			// printf("%i,",   (points.flag_gpio&0b100)>>2);
-			// printf("%i,",   (points.flag_gpio&0b1000)>>3);
-			// printf("%i,",   (points.flag_gpio&0b10000)>>4);
-			// printf("%i,",   (points.flag_gpio&0b100000)>>5);
-			// printf("%i,",   (points.flag_gpio&0b1000000)>>6);
-			// printf("%i,",   (points.flag_gpio&0b10000000)>>7);
-			printf("%i,",   (points.flag_state&1));
-			printf("%i,",   (points.flag_state&0b10)>>1);
-			printf("%i,",   (points.flag_state&0b100)>>2);
-			printf("%i,",   (points.flag_state&0b1000)>>3);
-			printf("%i,",   (points.flag_state&0b10000)>>4);
-			printf("%i,",   (points.flag_state&0b100000)>>5);
-			printf("%i,",   (points.flag_state&0b1000000)>>6);
-			printf("%i,",   (points.flag_state&0b10000000)>>7);
-			printf("%i,",   (points.flag_control&1));
-			printf("%i,",   (points.flag_control&0b10)>>1);
-			printf("%i,",   (points.flag_control&0b100)>>2);
-			printf("%i,",   (points.flag_control&0b1000)>>3);
-			printf("%i,",   (points.flag_control&0b10000)>>4);
-			printf("%i,",   (points.flag_control&0b100000)>>5);
-			printf("%i,",   (points.flag_control&0b1000000)>>6);
-			printf("%i,",   (points.flag_control&0b10000000)>>7);
-			printf("%i,",   (points.flag_nav&1));
-			printf("%i,",   (points.flag_nav&0b10)>>1);
-			printf("%i,",   (points.flag_nav&0b100)>>2);
-			printf("%i,",   (points.flag_nav&0b1000)>>3);
-			printf("%i,",   (points.flag_nav&0b10000)>>4);
-			printf("%i,",   (points.flag_nav&0b100000)>>5);
-			printf("%i,",   (points.flag_nav&0b1000000)>>6);
-			printf("%i,",   (points.flag_nav&0b10000000)>>7);
+
+			// printf("%i,",   (points.flag_pyro   )&1);
+			printf("%i,",   (points.flag_pyro>>1)&1);
+			printf("%i,",   (points.flag_pyro>>2)&1);
+			printf("%i,",   (points.flag_pyro>>3)&1);
+			printf("%i,",   (points.flag_pyro>>4)&1);
+			printf("%i,",   (points.flag_pyro>>5)&1);
+			printf("%i,",   (points.flag_pyro>>6)&1);
+			printf("%i,",   (points.flag_pyro>>7)&1);
+
+			printf("%i,",   (points.flag_gpio   )&1);
+			// printf("%i,",   (points.flag_gpio>>1)&1);
+			// printf("%i,",   (points.flag_gpio>>2)&1);
+			// printf("%i,",   (points.flag_gpio>>3)&1);
+			// printf("%i,",   (points.flag_gpio>>4)&1);
+			// printf("%i,",   (points.flag_gpio>>5)&1);
+			// printf("%i,",   (points.flag_gpio>>6)&1);
+			// printf("%i,",   (points.flag_gpio>>7)&1);
+
+			printf("%i,",   (points.flag_state   )&1);
+			printf("%i,",   (points.flag_state>>1)&1);
+			printf("%i,",   (points.flag_state>>2)&1);
+			printf("%i,",   (points.flag_state>>3)&1);
+			printf("%i,",   (points.flag_state>>4)&1);
+			printf("%i,",   (points.flag_state>>5)&1);
+			printf("%i,",   (points.flag_state>>6)&1);
+			printf("%i,",   (points.flag_state>>7)&1);
+
+			printf("%i,",   (points.flag_control   )&1);
+			printf("%i,",   (points.flag_control>>1)&1);
+			printf("%i,",   (points.flag_control>>2)&1);
+			printf("%i,",   (points.flag_control>>3)&1);
+			printf("%i,",   (points.flag_control>>4)&1);
+			printf("%i,",   (points.flag_control>>5)&1);
+			printf("%i,",   (points.flag_control>>6)&1);
+			printf("%i,",   (points.flag_control>>7)&1);
+
+			printf("%i,",   (points.flag_nav   )&1);
+			printf("%i,",   (points.flag_nav>>1)&1);
+			printf("%i,",   (points.flag_nav>>2)&1);
+			printf("%i,",   (points.flag_nav>>3)&1);
+			printf("%i,",   (points.flag_nav>>4)&1);
+			printf("%i,",   (points.flag_nav>>5)&1);
+			printf("%i,",   (points.flag_nav>>6)&1);
+			printf("%i,",   (points.flag_nav>>7)&1);
+
 			printf("%i,",   points.active_state_timer);
+
 			printf("%f,",   ((float)points.voltage_batt)/484.07f);
 			printf("%f,",   ((float)points.voltage_pyro)/484.07f);
+
 			printf("%f,",   points.position.x);
 			printf("%f,",   points.position.y);
 			printf("%f,",   points.position.z);
+
 			printf("%f,",   points.velocity.x);
 			printf("%f,",   points.velocity.y);
 			printf("%f,",   points.velocity.z);
+
 			printf("%f,",   points.accel_bias.x);
 			printf("%f,",   points.accel_bias.y);
 			printf("%f,",   points.accel_bias.z);
+
 			printf("%f,",   points.rotation.w);
 			printf("%f,",   points.rotation.x);
 			printf("%f,",   points.rotation.y);
 			printf("%f,",   points.rotation.z);
+
 			printf("%f,",   rotation_euler.x);
 			printf("%f,",   rotation_euler.y);
 			printf("%f,",   rotation_euler.z);
+
 			printf("%f,",   accel_l.x);
 			printf("%f,",   accel_l.y);
 			printf("%f,",   accel_l.z);
+
 			printf("%f,",   accel_l_debiased.x);
 			printf("%f,",   accel_l_debiased.y);
 			printf("%f,",   accel_l_debiased.z);
+
 			printf("%f,",   accel_i.x);
 			printf("%f,",   accel_i.y);
 			printf("%f,",   accel_i.z);
+
 			printf("%f,",   accel_i_debiased.x);
 			printf("%f,",   accel_i_debiased.y);
 			printf("%f,",   accel_i_debiased.z);
+
 			printf("%f,",   (float)points.ori_rate.x*0.00106526443f*180.0f/PI);
 			printf("%f,",   (float)points.ori_rate.y*0.00106526443f*180.0f/PI);
 			printf("%f,",   (float)points.ori_rate.z*0.00106526443f*180.0f/PI);
+
 			printf("%f,",   points.baro_alt);
 			printf("%f,",   points.baro_pressure);
 			printf("%f,",   points.baro_temp);
+			
 			printf("%i,",   points.mag.x);
 			printf("%i,",   points.mag.y);
 			printf("%i,",   points.mag.z);
 
-			printf("%f,",points.target_vector.x);
-			printf("%f,",points.target_vector.y);
-			printf("%f,",points.target_vector.z);
+			printf("%f,",	points.target_vector.x);
+			printf("%f,",	points.target_vector.y);
+			printf("%f,",	points.target_vector.z);
 
-			printf("%f,", atan2f(-points.target_vector.z, points.target_vector.x) * 180.0/PI);
-			printf("%f,", atan2f(points.target_vector.y, points.target_vector.x) * 180.0/PI);
+			printf("%f,", 	atan2f(-points.target_vector.z, points.target_vector.x) * 180.0/PI);
+			printf("%f,", 	atan2f(points.target_vector.y, points.target_vector.x) * 180.0/PI);
 
-			printf("%f,", angle_error.y);
-			printf("%f,", angle_error.z);
+			printf("%f,", 	angle_error.y);
+			printf("%f,", 	angle_error.z);
+
+			printf("%f,", 	points.thrust);
 			
-			printf("%f,",points.ang_acc_output.x*180/PI);
-			printf("%f,",points.ang_acc_output.y*180/PI);
-			printf("%f,",points.ang_acc_output.z*180/PI);
+			printf("%f,",	points.ang_acc_output.x*180/PI);
+			printf("%f,",	points.ang_acc_output.y*180/PI);
+			printf("%f,",	points.ang_acc_output.z*180/PI);
 			
-			printf("%f,",points.ang_acc_error.x*180/PI);
-			printf("%f,",points.ang_acc_error.y*180/PI);
-			printf("%f,",points.ang_acc_error.z*180/PI);
-			
-			printf("%f,",points.angle_out.x);
-			printf("%f,",points.angle_out.y);
-			printf("%f,",points.angle_out.z);
+			printf("%f,",	points.ang_acc_error.x*180/PI);
+			printf("%f,",	points.ang_acc_error.y*180/PI);
+			printf("%f,",	points.ang_acc_error.z*180/PI);
+
+			printf("%f,",	(points.ang_acc_error.x + points.ang_acc_output.x)*180/PI);
+			printf("%f,",	(points.ang_acc_error.y + points.ang_acc_output.y)*180/PI);
+			printf("%f,",	(points.ang_acc_error.z + points.ang_acc_output.z)*180/PI);
+
+			printf("%f,",	points.angle_out.x);
+			printf("%f,",	points.angle_out.y);
+			printf("%f,",	points.angle_out.z);
 
 			printf("%f,",   points.burn_alt);
 			printf("%f,",   points.comp);
+			printf("%f,", 	points.desired_accel);
+			printf("%f,", 	points.throttle_ratio);
+			printf("%f,", 	points.divert_angle);
+			
 			printf("%f,",   points.simulation_energy_est);
 			printf("%f,",   points.simulation_work_est);
 			printf("%f,",   points.simulation_position_est);

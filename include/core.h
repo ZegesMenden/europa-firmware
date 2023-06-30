@@ -24,11 +24,17 @@
 // use radio instead of usb serial
 // #define USE_RADIO
 
+// log data to internal flash
+// #define USE_INTERNAL_FLASH
+
 // enable gps integration to the kalman filter
 // #define USE_GPS
 
 // simulate flight (SITL)
 // #define SITL
+
+// enable / disable buzzer
+#define USE_BUZZER
 
 // ============================================================================
 // thresholds for state switches
@@ -114,14 +120,15 @@ namespace flags {
 		volatile bool velocity_below_landed_threshold = false;
 
 		uint8_t sts_bitmap = 0;
-		// accel_over_ld_threshold
-		// accel_under_burnout_threshold
-		// velocity_over_apogee_threshold
-		// accel_over_landing_threshold
-		// accel_within_landed_threshold
-		// gyro_within_landed_threshold
-		// baro_below_alt_threshold
-		// velocity_below_landed_threshold
+
+		// b0: accel_over_ld_threshold
+		// b1: accel_under_burnout_threshold
+		// b2: velocity_over_apogee_threshold
+		// b3: accel_over_landing_threshold
+		// b4: accel_within_landed_threshold
+		// b5: gyro_within_landed_threshold
+		// b6: baro_below_alt_threshold
+		// b7: velocity_below_landed_threshold
 
 	}
 
@@ -144,16 +151,19 @@ namespace flags {
 		volatile bool kalman_z_converged = false;
 
 		volatile bool orientation_converged = false;
+		
+		volatile bool gps_drdy = false;
 
 		uint8_t nav_bitmap;
-		// gyro_debiased
-		// baro_debiased
-		// gps_lock
-		// gps_initial_position_lock
-		// kalman_x_converged
-		// kalman_y_converged
-		// kalman_z_converged
-		// orientation_converged
+
+		// b0: orientation_converged
+		// b1: kalman_z_converged
+		// b2: kalman_y_converged
+		// b3: kalman_x_converged
+		// b4: gps_initial_position_lock
+		// b5: gps_lock
+		// b6: baro_debiased
+		// b7: gyro_debiased
 
 	}
 
@@ -168,10 +178,11 @@ namespace flags {
 
 		volatile bool core1_communication_failure = false;
 
-		uint8_t control_bitmap;
-		// start_landing_burn
-		// burn_alt_over_safe_thresh
-		// core1_communication_failure
+		// b0: start_landing_burn
+		// b1: burn_alt_over_safe_thresh
+		// b2: core1_communication_failure
+
+		uint8_t control_bitmap = 0;
 
 	}
 
@@ -180,7 +191,6 @@ namespace flags {
 		uint8_t gpio_sts = 0;
 		// switch_sts
 
-		uint8_t pyro_sts = 0;
 		bool pyro_1_fire = false;
 		bool pyro_2_fire = false;
 		bool pyro_3_fire = false;
@@ -188,13 +198,15 @@ namespace flags {
 		bool pyro_2_cont = false;
 		bool pyro_3_cont = false;
 		
-		// pyro_has_power
-		// pyro_1_fire
-		// pyro_2_fire
-		// pyro_3_fire
-		// pyro_1_cont
-		// pyro_2_cont
-		// pyro_3_cont
+		// b1: pyro_has_power
+		// b2: pyro_1_fire
+		// b3: pyro_2_fire
+		// b4: pyro_3_fire
+		// b5: pyro_1_cont
+		// b6: pyro_2_cont
+		// b7: pyro_3_cont
+		
+		uint8_t pyro_sts = 0;
 
 		volatile bool running_from_lipo = false;
 		volatile bool pyro_has_power = false;
@@ -204,18 +216,20 @@ namespace flags {
 
 	void update() {
 		
-		nav_flags::nav_bitmap = (nav_flags::gyro_debiased<<7) |
-								(nav_flags::baro_debiased<<6) |
+		nav_flags::nav_bitmap = (nav_flags::orientation_converged) |
+								(nav_flags::kalman_z_converged<<1) |
+								(nav_flags::kalman_y_converged<<2) |
+								(nav_flags::kalman_x_converged<<3) |
+								(nav_flags::gps_initial_position_lock<<4) |
 								(nav_flags::gps_lock<<5) |
-								(nav_flags::gps_initial_position_lock<<5) |
-								(nav_flags::kalman_x_converged<<4) |
-								(nav_flags::kalman_y_converged<<3) |
-								(nav_flags::kalman_z_converged<<2) |
-								(nav_flags::orientation_converged<<1);
+								(nav_flags::baro_debiased<<6) |
+								(nav_flags::gyro_debiased<<7);
+
 		
+
 		control_flags::control_bitmap = (control_flags::start_landing_burn) |
-										(control_flags::burn_alt_over_safe_thresh) |
-										(control_flags::core1_communication_failure);
+										(control_flags::burn_alt_over_safe_thresh<<1) |
+										(control_flags::core1_communication_failure<<2);
 
 		perif_flags::pyro_sts = (perif_flags::pyro_has_power<<1) |
 								(perif_flags::pyro_1_fire<<2) |

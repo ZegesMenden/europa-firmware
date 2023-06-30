@@ -76,7 +76,7 @@ public:
 	operator vec3<_t>() const { return vec3<_t>( (_t)this->x, (_t)this->y, (_t)this->z ); }
 
 	/**
-	 * @brief Adds the right handed vector to the left handed vector
+	 * @brief Adds the right hand vector to the left hand vector
 	 * @return sum of the two vectors
 	 */
 	vec3& operator+=(const vec3& v) {
@@ -94,7 +94,7 @@ public:
 	vec3& operator+(const vec3& v) const { return vec3(*this) += v; }
 
 	/**
-	 * @brief Subtracts the right handed vector from the left handed vector
+	 * @brief Subtracts the right hand vector from the left hand vector
 	 * @return difference of the two vectors
 	 */
 	vec3& operator-=(const vec3& v) {
@@ -106,15 +106,15 @@ public:
 	};
 
 	/**
-	 * @brief Adds the right handed vector to the left handed vector
+	 * @brief Subtracts the right hand vector from the left hand vector
 	 * @return sum of the two vectors
 	 */
 	const vec3 operator-(const vec3& v) const { return vec3(*this) -= v; }
 
-	const vec3& operator- () const { return vec3(-this->x, -this->y, -this->z); }
+	const vec3 operator- () const { return vec3(-this->x, -this->y, -this->z); }
 
 	/**
-	 * @brief Multiplies the left handed vector by the right handed vector
+	 * @brief Multiplies the left hand vector by the right hand vector
 	 * @return product of the two vectors
 	 */
 	vec3& operator*=(const vec3& v) {
@@ -132,7 +132,7 @@ public:
 	const vec3& operator*(const vec3& v) const { return vec3(*this) *= v; }
 
 	/**
-	 *  @brief Multiplies the left handed vector by a scalar
+	 *  @brief Multiplies the left hand vector by a scalar
 	 * @return product of the vector and scalar
 	 */
 	vec3& operator*=(T scale) {
@@ -150,7 +150,7 @@ public:
 	const vec3 operator*(T scale) const { return vec3(*this) *= scale; }
 
 	/**
-	 * @brief Divides the left handed vector by the right handed vector
+	 * @brief Divides the left hand vector by the right hand vector
 	 * @return quotient of the two vectors
 	 */
 	vec3& operator/=(const vec3& v) {
@@ -168,7 +168,7 @@ public:
 	const vec3 operator/(const vec3& v) const { return vec3(this->x/v.x, this->y/v.y, this->z/v.z); }
 
 	/**
-	 * @brief Divides the left handed vector by a scalar
+	 * @brief Divides the left hand vector by a scalar
 	 * @return quotient of the vector and scalar
 	 */
 	vec3& operator/=(T scale) {
@@ -225,6 +225,10 @@ public:
 	 */
 	T dot(const vec3& v) {
 		return (this->x * v.x + this->y * v.y + this->z * v.z);
+	}
+
+	T angle_between_vectors(vec3 v) {
+		return acosf(dot(v) / (len() * (v.len())));
 	}
 
 };

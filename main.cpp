@@ -1,28 +1,29 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
+#include "hardware/gpio.h"
+
+#include "gps.h"
 #include "core.h"
-#include "pico/sem.h"
-#include "drivers/perif_ctrl.h"
+#include "task.h"
+#include "control.h"
+#include "telemetry.h"
+#include "state_ctrl.h"
+#include "simulation.h"
 #include "navigation.h"
 #include "datalogging.h"
-#include "control.h"
-#include "hardware/gpio.h"
-#include "state_ctrl.h"
-#include "task.h"
-#include "drivers/core_interface.h"
-#include "simulation.h"
-#include "telemetry.h"
-#include "drivers/radio.h"
-#include "gps.h"
 
+#include "drivers/radio.h"
+#include "drivers/perif_ctrl.h"
+#include "drivers/core_interface.h"
+
+task_t task_gps = { (callback_t)gps::update, 10000, 0, 0, 0 };
 task_t task_nav = { (callback_t)nav::update, 10000, 0, 0, 0 };
 task_t task_perif = { (callback_t)perif::update, 10000, 0, 0, 0 };
 task_t task_state = { (callback_t)state::update, 10000, 0, 0, 0 };
+task_t task_radio = { (callback_t)radio::update, 10000, 0, 0, 0 };
 task_t task_datalog = { (callback_t)datalog::update, 10000, 0, 0, 0 };
 task_t task_control = { (callback_t)control::update, 10000, 0, 0, 0 };
 task_t task_telemetry = { (callback_t)telemetry::update, 10000, 0, 0, 0 };
-task_t task_radio = { (callback_t)radio::update, 10000, 0, 0, 0 };
-task_t task_gps = { (callback_t)gps::update, 10000, 0, 0, 0 };
 
 int main(void)
 { 
@@ -56,6 +57,13 @@ int main(void)
 
 		.mag = &nav::raw::mag,
 
+		.lat = &nav::lat,
+		.lon = &nav::lon,
+		.gps_pos_y = &nav::position_gps.y,
+		.gps_pos_z = &nav::position_gps.z,
+		.h_acc = &nav::gps_horizontal_accuracy,
+		.n_sats = &nav::gps_n_sats,
+
 		.thrust = &control::thrust,
 
 		.target_vector = &control::target_vector,
@@ -65,6 +73,10 @@ int main(void)
 		
 		.burn_alt                = &control::gfield::burn_alt,
 		.comp                    = &control::gfield::comp,
+		.desired_accel			 = &control::gfield::desired_accel,
+		.throttle_ratio			 = &control::gfield::throttle_ratio,
+		.divert_angle			 = &control::gfield::divert_angle,
+
 		.simulation_energy_est   = &control::simulation_energy_est,
 		.simulation_work_est     = &control::simulation_work_est,
 		.simulation_position_est = &control::simulation_position_est,
@@ -74,18 +86,18 @@ int main(void)
 
 	};
 	
-	sleep_ms(2000);
+	sleep_ms(1000);
 
-	print_compile_config();
 	perif::init();
+	print_compile_config();
 	nav::init();
 	datalog::init();
 	telemetry::init();
+	radio::init();
 	#ifdef USE_GPS
 		gps::init();
 	#endif
-	radio::init();
-	
+
 	core1_interface::core1_landing_sim_func = (core1_interface::callback_t)simulation::run_landing_sim;
 	core1_interface::core1_ascent_sim_func = (core1_interface::callback_t)simulation::run_ascent_sim;
 	core1_interface::core1_divert_sim_func = (core1_interface::callback_t)simulation::run_divert_sim;
@@ -100,16 +112,17 @@ int main(void)
 		timing::update();
 		flags::update();
 
+		update_task(task_gps);
 		update_task(task_nav);
 		update_task(task_state);
 		update_task(task_control);
-		update_task(task_perif);
 		update_task(task_datalog);
 		update_task(task_telemetry);
+		update_task(task_perif);
 		update_task(task_radio);
 
 		#ifdef USE_GPS
-			update_task(task_gps);
+			
 		#endif
 
 		timing::average_runtime = (time_us_64()-t_start);

@@ -88,9 +88,13 @@ public:
 		// if cs and inst were not set (might be redundant)
 		if ( cs == -1 || inst == NULL ) { return 0; }
 		
+		// set mode to 4 wir spi
+		write_to_device(0x62, 0b00100100);
+
 		// read who_am_i register
 		uint8_t buf = 0;
 		if ( !read_from_device(0x4f, &buf, 1) ) { return 0; }
+		printf("buf: |%i| |%x|\n", buf, buf);
 		if ( buf != 0x40 ) { return 0; }
 
 		// disable i2c and use 4-wire SPI
