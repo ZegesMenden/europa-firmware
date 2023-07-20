@@ -44,6 +44,7 @@ namespace perif {
 	const system_state_t camera_disable_state = state_landed;
 
 	uint8_t io_timing_idx = 0;
+	uint8_t servo_timing_idx = 0;
 
 	uint8_t neopixel_timing_idx = 0;
 	uint8_t neopixel_timing_freq = 0;
@@ -51,8 +52,77 @@ namespace perif {
 	uint8_t buzzer_timing_idx = 0;
 	uint8_t buzzer_timing_freq = 0;
 		
-	uint16_t servo_1_position = 1425;
-	uint16_t servo_2_position = 1425;
+	const uint16_t servo_neutral = 1500;
+
+	uint16_t servo_1_position = servo_neutral;
+	uint16_t servo_2_position = servo_neutral;
+	uint16_t servo_3_position = servo_neutral;
+	uint16_t servo_4_position = servo_neutral;
+	uint16_t servo_5_position = servo_neutral;
+	uint16_t servo_6_position = servo_neutral;
+	uint16_t servo_7_position = servo_neutral;
+	uint16_t servo_8_position = servo_neutral;
+
+	int16_t servo_1_offset = -50;
+	int16_t servo_2_offset = 10;
+	int16_t servo_3_offset = 0;
+	int16_t servo_4_offset = 0;
+	int16_t servo_5_offset = 0;
+	int16_t servo_6_offset = 0;
+	int16_t servo_7_offset = 0;
+	int16_t servo_8_offset = 0;
+
+	uint16_t servo_1_min = 1250;
+	uint16_t servo_1_max = 1650;
+
+	uint16_t servo_2_min = 1225;
+	uint16_t servo_2_max = 1760;
+
+	uint16_t servo_3_min = 1500;
+	uint16_t servo_3_max = 1500;
+
+	uint16_t servo_4_min = 1500;
+	uint16_t servo_4_max = 1500;
+
+	uint16_t servo_5_min = 1500;
+	uint16_t servo_5_max = 1500;
+
+	uint16_t servo_6_min = 1500;
+	uint16_t servo_6_max = 1500;
+
+	uint16_t servo_7_min = 1500;
+	uint16_t servo_7_max = 1500;
+
+	uint16_t servo_8_min = 1500;
+	uint16_t servo_8_max = 1500;
+
+	void update_pwm_controller() {
+
+		uint8_t buf[20] = {0x00};
+		buf[0] = 0;
+		buf[1] = (servo_8_position>>8)&0xff;
+		buf[2] = servo_8_position&0xff;
+		buf[3] = (servo_7_position>>8)&0xff;
+		buf[4] = servo_7_position&0xff;
+		buf[5] = (servo_6_position>>8)&0xff;
+		buf[6] = servo_6_position&0xff;
+		buf[7] = (servo_5_position>>8)&0xff;
+		buf[8] = servo_5_position&0xff;
+		buf[9] = (servo_4_position>>8)&0xff;
+		buf[10] = servo_4_position&0xff;
+		buf[11] = (servo_3_position>>8)&0xff;
+		buf[12] = servo_3_position&0xff;
+		buf[13] = (servo_2_position>>8)&0xff;
+		buf[14] = servo_2_position&0xff;
+		buf[15] = (servo_1_position>>8)&0xff;
+		buf[16] = servo_1_position&0xff;
+		buf[17] = 0;
+		buf[18] = 50;
+		buf[19] = 1;
+
+		i2c_write_timeout_per_char_us(i2c1, 0x16, buf, 20, false, 100);
+
+	}
 	
 	bool pyro_1_fire_condition() {
 		
@@ -197,25 +267,25 @@ namespace perif {
 		
 		spi_init(spi0, spi_default_baud);
 
-		gpio_set_function(qwiic_port0.pin0, qwiic_port0.gpio_func);
-		gpio_set_function(qwiic_port0.pin1, qwiic_port0.gpio_func);
-		switch(qwiic_port0.protocol) {  
-			case(_port_t::port_protocol::i2c_0): { i2c_init(i2c0, 400000); break; }
-			case(_port_t::port_protocol::i2c_1): { i2c_init(i2c1, 400000); break; }
-			case(_port_t::port_protocol::uart_0): { uart_init(uart0, 115200); break; }
-			case(_port_t::port_protocol::uart_1): { uart_init(uart1, 115200); break; }
-			case(_port_t::port_protocol::gpio): { break; }
-		}
+		// gpio_set_function(qwiic_port0.pin0, qwiic_port0.gpio_func);
+		// gpio_set_function(qwiic_port0.pin1, qwiic_port0.gpio_func);
+		// switch(qwiic_port0.protocol) {  
+		// 	case(_port_t::port_protocol::i2c_0): { i2c_init(i2c0, 400000); break; }
+		// 	case(_port_t::port_protocol::i2c_1): { i2c_init(i2c1, 400000); break; }
+		// 	case(_port_t::port_protocol::uart_0): { uart_init(uart0, 115200); break; }
+		// 	case(_port_t::port_protocol::uart_1): { uart_init(uart1, 115200); break; }
+		// 	case(_port_t::port_protocol::gpio): { break; }
+		// }
 		
-		gpio_set_function(qwiic_port1.pin0, qwiic_port1.gpio_func);
-		gpio_set_function(qwiic_port1.pin1, qwiic_port1.gpio_func);
-		switch(qwiic_port1.protocol) {  
-			case(_port_t::port_protocol::i2c_0): { i2c_init(i2c0, 400000); break; }
-			case(_port_t::port_protocol::i2c_1): { i2c_init(i2c1, 400000); break; }
-			case(_port_t::port_protocol::uart_0): { uart_init(uart0, 115200); break; }
-			case(_port_t::port_protocol::uart_1): { uart_init(uart1, 115200); break; }
-			case(_port_t::port_protocol::gpio): { break; }
-		}
+		// gpio_set_function(qwiic_port1.pin0, qwiic_port1.gpio_func);
+		// gpio_set_function(qwiic_port1.pin1, qwiic_port1.gpio_func);
+		// switch(qwiic_port1.protocol) {  
+		// 	case(_port_t::port_protocol::i2c_0): { i2c_init(i2c0, 400000); break; }
+		// 	case(_port_t::port_protocol::i2c_1): { i2c_init(i2c1, 400000); break; }
+		// 	case(_port_t::port_protocol::uart_0): { uart_init(uart0, 115200); break; }
+		// 	case(_port_t::port_protocol::uart_1): { uart_init(uart1, 115200); break; }
+		// 	case(_port_t::port_protocol::gpio): { break; }
+		// }
 
 		gpio_set_function(qwiic_port2.pin0, qwiic_port2.gpio_func);
 		gpio_set_function(qwiic_port2.pin1, qwiic_port2.gpio_func);
@@ -253,12 +323,25 @@ namespace perif {
 		neopix_init(pin_neopixel);
 		buzzer_disable(pin_buzzer);
 		
-		servo_init(24);
-		servo_init(25);
+		// servo_init(24);
+		// servo_init(25);
 
-		servo_write(24, servo_1_position);
-		servo_write(25, servo_2_position);
+		// servo_write(24, servo_1_position);
+		// servo_write(25, servo_2_position);
 
+		gpio_pull_up(14);
+		gpio_pull_up(15);
+
+		gpio_set_slew_rate(14, GPIO_SLEW_RATE_SLOW);
+		gpio_set_slew_rate(15, GPIO_SLEW_RATE_SLOW);
+
+		gpio_set_function(14, GPIO_FUNC_I2C);
+		gpio_set_function(15, GPIO_FUNC_I2C);
+
+		i2c_init(i2c1, 1000000);
+
+		update_pwm_controller();
+		
 	}
 
 	void update() {
@@ -379,8 +462,22 @@ namespace perif {
 		// ============================================================================================
 		// servos
 
-		servo_write(24, servo_1_position);
-		servo_write(25, servo_2_position);
+		servo_timing_idx++;
+
+		if ( servo_timing_idx > 1 ) { 
+			servo_1_position = clamp(servo_1_position, servo_1_min, servo_1_max);
+			servo_2_position = clamp(servo_2_position, servo_2_min, servo_2_max);
+			servo_3_position = clamp(servo_3_position, servo_3_min, servo_3_max);
+			servo_4_position = clamp(servo_4_position, servo_4_min, servo_4_max);
+			servo_5_position = clamp(servo_5_position, servo_5_min, servo_5_max);
+			servo_6_position = clamp(servo_6_position, servo_6_min, servo_6_max);
+			servo_7_position = clamp(servo_7_position, servo_7_min, servo_7_max);
+			servo_8_position = clamp(servo_8_position, servo_8_min, servo_8_max);
+			
+			update_pwm_controller();
+			servo_timing_idx = 0;
+		}
+		
 
 		// ============================================================================================
 		// camera
