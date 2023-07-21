@@ -189,17 +189,15 @@ public:
 	 * @brief Normalizes the vector
 	 * @return normalized vector
 	 */
-	vec3& norm() {
+	vec3 norm() {
 		T normal = len();
 
 		if ( normal != 0.0 )
 		{
-			this->x /= normal;
-			this->y /= normal;
-			this->z /= normal;
+			return vec3<T>(x/normal, y/normal, z/normal);
 		}
 
-		return(*this);
+		return vec3<T>(0.0, 0.0, 0.0);
 	};
 
 	/**

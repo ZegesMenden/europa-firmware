@@ -6,6 +6,9 @@
 
 #pragma once
 
+// datalog header
+//sys_time,sys_state,sys_core_usage,pyro_has_power,pyro_1_fire,pyro_2_fire,pyro_3_fire,pyro_1_cont,pyro_2_cont,pyro_3_cont,switch_sts,sys_flag_accel_over_ld_threshold,sys_flag_accel_under_burnout_threshold,sys_flag_velocity_over_apogee_threshold,sys_flag_accel_over_landing_threshold,sys_flag_accel_within_landed_threshold,sys_flag_gyro_within_landed_threshold,sys_flag_baro_below_alt_threshold,sys_flag_velocity_below_landed_threshold,gnc_flag_start_landing_burn,gnc_flag_burn_alt_over_safe_thresh,sys_flag_core1_communication_failure,gnc_flag_3,gnc_flag_4,gnc_flag_5,gnc_flag_6,gnc_flag_7,gnc_flag_gyro_debiased,gnc_flag_baro_debiased,gnc_flag_gps_lock,gnc_flag_gps_initial_position_lock,gnc_flag_kalman_x_converged,gnc_flag_kalman_y_converged,gnc_flag_kalman_z_converged,gnc_flag_orientation_converged,sys_active_state_timer,sys_flash_errors,sys_voltage_batt,sys_voltage_pyro,nav_position_x,nav_position_y,nav_position_z,nav_velocity_x,nav_velocity_y,nav_velocity_z,nav_accel_bias_x,nav_accel_bias_y,nav_accel_bias_z,nav_rotation_w,nav_rotation_x,nav_rotation_y,nav_rotation_z,nav_rotation_euler_x,nav_rotation_euler_y,nav_rotation_euler_z,nav_acceleration_l_x,nav_acceleration_l_y,nav_acceleration_l_z,nav_acceleration_l_debiased_x,nav_acceleration_l_debiased_y,nav_acceleration_l_debiased_z,nav_acceleration_i_x,nav_acceleration_i_y,nav_acceleration_i_z,nav_acceleration_i_debiased_x,nav_acceleration_i_debiased_y,nav_acceleration_i_debiased_z,nav_ori_rate_x,nav_ori_rate_y,nav_ori_rate_z,nav_baro_alt,nav_baro_pressure,nav_baro_temp,nav_mag_x,nav_mag_y,nav_mag_z,gnc_target_vector_x,gnc_target_vector_y,gnc_target_vector_z,gnc_angle_setpoint_y,gnc_angle_setpoint_z,gnc_angle_y,gnc_angle_z,gnc_angle_error_y,gnc_angle_error_z,gnc_thrust,gnc_ang_acc_output_x,gnc_ang_acc_output_y,gnc_ang_acc_output_z,gnc_ang_acc_error_x,gnc_ang_acc_error_y,gnc_ang_acc_error_z,gnc_ang_acc_x,gnc_ang_acc_y,gnc_ang_acc_z,gnc_angle_out_x,gnc_angle_out_y,gnc_angle_out_z,gnc_burn_alt,gnc_comp,gnc_desired_accel,gnc_throttle_ratio,gnc_divert_angle,simulation_energy_est,simulation_work_est,simulation_position_est,simulation_velocity_est,simulation_time_est,simulation_time_taken
+
 namespace datalog {
 
 	#pragma pack(1)
@@ -22,6 +25,8 @@ namespace datalog {
 		uint8_t flag_control;
 		uint8_t flag_nav;
 		uint8_t active_state_timer;
+
+		uint8_t flash_errors;
 
 		uint16_t voltage_batt;
 		uint16_t voltage_pyro;
@@ -70,7 +75,7 @@ namespace datalog {
 		float simulation_time_est;
 		uint32_t simulation_time_taken;
 
-		uint8_t extra[29];
+		uint8_t extra[28];
 
 	} points;
 
@@ -87,6 +92,8 @@ namespace datalog {
 			uint8_t* flag_control;
 			uint8_t* flag_nav;
 			uint8_t* active_state_timer;
+
+			uint8_t* flash_errors;
 
 			uint16_t* voltage_batt;
 			uint16_t* voltage_pyro;
@@ -137,7 +144,7 @@ namespace datalog {
 
 		} points;
 
-		void *raw[43] = {NULL};
+		void *raw[44] = {NULL};
 
 		static_assert(sizeof(points) == sizeof(raw));
 	} ptrs;
@@ -191,7 +198,7 @@ namespace datalog {
 
 		#else
 
-			multicore_lockout_start_blocking();
+			// multicore_lockout_start_blocking();
 
 			int last_page_was_valid = 0;
 			uint8_t read_buf[256] = {0};
@@ -215,7 +222,7 @@ namespace datalog {
 				
 			}
 
-			multicore_lockout_end_blocking();
+			// multicore_lockout_end_blocking();
 
 			return page;
 
@@ -239,7 +246,7 @@ namespace datalog {
 		
 		#ifdef DATALOG_EN
 
-		points.padding = 0x0011223344556677;
+		points.padding = 0;
 		points.time						= *ptrs.points.time;
 		points.state					= *ptrs.points.state;
 		points.flag_gpio				= *ptrs.points.flag_gpio;
@@ -248,6 +255,8 @@ namespace datalog {
 		points.flag_control				= *ptrs.points.flag_control;
 		points.flag_nav					= *ptrs.points.flag_nav;
 		points.active_state_timer		= *ptrs.points.active_state_timer;
+		points.flash_errors				= *ptrs.points.flash_errors;
+
 		points.voltage_batt				= *ptrs.points.voltage_batt;
 		points.voltage_pyro				= *ptrs.points.voltage_pyro;
 		points.core_usage_percent		= *ptrs.points.core_usage_percent;
@@ -272,6 +281,8 @@ namespace datalog {
 		points.gps_pos_z				= *ptrs.points.gps_pos_z;
 		points.h_acc					= *ptrs.points.h_acc;
 		points.n_sats					= *ptrs.points.n_sats;
+
+		points.thrust 					= *ptrs.points.thrust;
 
 		points.target_vector        	= *ptrs.points.target_vector;
 		points.ang_acc_output       	= *ptrs.points.ang_acc_output;
@@ -308,12 +319,17 @@ namespace datalog {
 		#ifdef DATALOG_EN
 
 		#ifndef USE_INTERNAL_FLASH
+
 			uint8_t a = 0;
 			uint8_t b = 0;
 			uint8_t c = 0;
 			get_jdec(pin_cs_flash, &a, &b, &c);
 
 			printf("%i, %i, %i\n", a, b, c);
+
+			get_sreg(pin_cs_flash, &a, &b);
+
+			printf("%i, %i, %i\n", a, b);
 
 			if ( (a == 0) && (b == 0) && (c == 0) ) { boot_panic("no flash chip found!\n"); return 0; }
 		#endif
@@ -323,6 +339,7 @@ namespace datalog {
 
 		spi_set_baudrate(spi0, spi_flash_baud);     
 		
+		// flash_erase_chip(pin_cs_flash);
 		find_flash_start();
 
 		#ifndef USE_INTERNAL_FLASH
@@ -347,7 +364,7 @@ namespace datalog {
 		spi_set_baudrate(spi0, spi_default_baud);
 		return 1;
 		#endif
-		return 1;
+		return true;
 	}
 
 	void export_flash_data_blocking() {
@@ -357,13 +374,11 @@ namespace datalog {
 			
 			flash_read_page(pin_cs_flash, i, (uint8_t*)&points);
 
-			printf("$");
-
 			quat<float> rotation = points.rotation;
 			vec3<float> target_vec = points.target_vector;
 
 			vec3<float> rotation_euler = rotation.euler_angles() * 180.0f/PI;
-			vec3<float> accel_l = points.acceleration * 0.009765625f;
+			vec3<float> accel_l = vec3<float>(points.acceleration.x, points.acceleration.y, points.acceleration.z) * 0.009765625f;
 			vec3<float> accel_i = rotation.rotate_vec(accel_l);
 			vec3<float> accel_i_debiased = accel_i - points.accel_bias;
 			vec3<float> accel_l_debiased = rotation.conjugate().rotate_vec(accel_i_debiased);
@@ -372,6 +387,15 @@ namespace datalog {
 			target_vector_ = rotation.conjugate().rotate_vec(target_vec.norm());
 			angle_error.y = atan2f(-target_vector_.z, target_vector_.x) * 180.0/PI;
 			angle_error.z = atan2f(target_vector_.y, target_vector_.x) * 180.0/PI;
+
+			vec3<float> vector_heading = rotation.conjugate().rotate_vec(vec3<float>(1.0, 0.0, 0.0));
+			vec3<float> vector_angle;
+			vector_angle.y = atan2f(-vector_heading.z, vector_heading.x) * 180.0/PI;
+			vector_angle.z = atan2f(vector_heading.y, vector_heading.x) * 180.0/PI;
+
+			printf("$");
+
+			if ( points.state == 0xff ) { printf("\n$\n");continue; }
 
 			printf("%llu,", points.time);
 			printf("%i,",   points.state);
@@ -423,6 +447,7 @@ namespace datalog {
 			printf("%i,",   (points.flag_nav>>7)&1);
 
 			printf("%i,",   points.active_state_timer);
+			printf("%i,",   points.flash_errors);
 
 			printf("%f,",   ((float)points.voltage_batt)/484.07f);
 			printf("%f,",   ((float)points.voltage_pyro)/484.07f);
@@ -482,6 +507,9 @@ namespace datalog {
 
 			printf("%f,", 	atan2f(-points.target_vector.z, points.target_vector.x) * 180.0/PI);
 			printf("%f,", 	atan2f(points.target_vector.y, points.target_vector.x) * 180.0/PI);
+
+			printf("%f,", 	vector_angle.y);
+			printf("%f,", 	vector_angle.z);
 
 			printf("%f,", 	angle_error.y);
 			printf("%f,", 	angle_error.z);
@@ -619,7 +647,7 @@ namespace datalog {
 	void update() {
 		#ifdef DATALOG_EN
 
-		if ( start_flash_export ) {
+		if ( start_flash_export && !vehicle_is_in_flight() ) {
 			// export_flash_data_async();
 			export_flash_data_blocking();
 			start_flash_export = false;
@@ -633,39 +661,39 @@ namespace datalog {
 				break;
 			}
 			case(state_nav_init): { 
-				if ( ++log_timing_idx >= 20 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 20 ) { log_flash_data(); log_timing_idx = 0; } // 5hz
 				break;
 			}
 			case(state_launch_idle): { 
-				if ( ++log_timing_idx >= 20 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 20 ) { log_flash_data(); log_timing_idx = 0; } // 5hz
 				break;
 			}
 			case(state_launch_detect): { 
-				if ( ++log_timing_idx >= 2 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_powered_ascent): { 
-				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_ascent_coast): { 
-				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_descent_coast): { 
-				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_landing_start): { 
-				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_landing_guidance): { 
-				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_landing_terminal): { 
-				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; } // 100hz
 				break;
 			}
 			case(state_landed): { 
@@ -696,7 +724,7 @@ namespace datalog {
 				break;
 			}
 			case(state_abort): { 
-				if ( ++log_timing_idx >= 2 ) { log_flash_data(); log_timing_idx = 0; }
+				if ( ++log_timing_idx >= 1 ) { log_flash_data(); log_timing_idx = 0; }
 				break;
 			}
 			default: { 

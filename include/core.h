@@ -34,7 +34,10 @@
 // #define SITL
 
 // enable / disable buzzer
-#define USE_BUZZER
+// #define USE_BUZZER
+
+// enable / disable hardware control of landing burn (motor ignition, state control logic)
+// #define LANDING_HW_EN
 
 // ============================================================================
 // thresholds for state switches
@@ -290,7 +293,7 @@ namespace timing {
 
 enum system_state_t : uint8_t {
 	// initialization of all systems
-	state_boot,
+	state_boot = 0,
 
 	// 1st idle state
 	state_idle,
@@ -418,9 +421,9 @@ struct _port_t {
 
 _port_t qwiic_port0 = { 14,                             // pin0
 						15,                             // pin1
-						_port_t::port_protocol::gpio,   // protocol
-						GPIO_FUNC_SIO,                  // gpio func
-						true};                          // bitbang flag
+						_port_t::port_protocol::i2c_1,  // protocol
+						GPIO_FUNC_I2C,                  // gpio func
+						false};                          // bitbang flag
 
 _port_t qwiic_port1 = { 13,                             // pin0
 						12,                             // pin1
@@ -501,3 +504,15 @@ void print_compile_config() {
 
 #define boot_warning(message) printf("[WARNING] from function %s:\n%s\n", __FUNCTION__, message)
 #define boot_panic(message) printf("[ERROR] from function %s:\n%s\n", __FUNCTION__, message); flags::boot::boot_fail = true
+
+#ifdef debugprintf_gps_en
+#define debugprintf_gps(fmt, ...) printf(fmt, __VA_ARGS__)
+#else
+#define debugprintf_gps(fmt, ...) 
+#endif
+
+#ifdef debugprintf_en
+#define debugprintf(fmt, ...) printf(fmt, __VA_ARGS__)
+#else
+#define debugprintf(fmt, ...) 
+#endif

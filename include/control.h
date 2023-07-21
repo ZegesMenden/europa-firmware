@@ -30,11 +30,18 @@ namespace control {
 				output = P + I + D;
 			}
 
-			void updateWithDerivative(float input, float derivative, float dt) {
+			void update_with_derivative(float input, float derivative, float dt) {
 				error = setpoint - input;
 				P = kP * error;
 				I += error * kI * dt;
 				output = P + (derivative*kD) + I;
+			}
+
+			void update_with_target_derivative(float input, float derivative, float target_derivative, float dt) {
+				error = setpoint - input;
+				P = kP * error;
+				I += error * kI * dt;
+				output = P + ((target_derivative-derivative)*kD) + I;
 			}
 
 		private:
@@ -74,40 +81,27 @@ namespace control {
 	float simulation_velocity_est;
 	float simulation_time_est;
 	uint32_t simulation_time_taken;
-	
-	const uint16_t servo_neutral = 1500;
 
-	int16_t servo_1_offset = -75;
-	int16_t servo_2_offset = -75;
-
-	uint16_t servo_1_min = 1250;
-	uint16_t servo_1_max = 1650;
-
-	uint16_t servo_2_min = 1225;
-	uint16_t servo_2_max = 1625;
-
-	pid pid_ori_y(8, 0.0, 6, 0.0);
-	pid pid_ori_z(8, 0.0, 6, 0.0);
+	pid pid_ori_y(12, 0.0, 8, 0.0);
+	pid pid_ori_z(12, 0.0, 8, 0.0);
 
 	namespace gfield {
 
 		// constants
 
 		// values for D12
-		const float average_thrust = 10.5f;
+		const float average_thrust = 11.5f;
 		const float max_accel_for_divert = 12.f;
 
-		const float motor_burn_time = 1.7f;
-		const float max_target_burn_time = 1.9f;
-		const float min_target_burn_time = 1.5f;
-		const float ignition_delay_time = 0.6f;
+		const float motor_burn_time = 2.4f;
+		const float max_target_burn_time = 2.5f;
+		const float min_target_burn_time = 2.4f;
+		const float ignition_delay_time = 0.1f;
 
 		// divert settings
-		const float max_burn_alt = 12.f;
+		const float max_burn_alt = 20.f;
 		const float target_landing_alt = 1.f;
 		const float min_throttle_percent = 0.8f;
-
-		// highest thrust percentage to trigger a divert
 		const float max_throttle_for_divert = 0.98f;
 
 		// point between upright (0) and retrograde (1) to point when slowing down while landing
@@ -145,7 +139,7 @@ namespace control {
 			// =========================================================
 			// update burn alt
 
-			float drag_est = 0.25*nav::acceleration_l.len();
+			float drag_est = 0.5*nav::acceleration_l.len();
 
 			// energy calculation
 
@@ -171,15 +165,15 @@ namespace control {
 				if ( burn_alt > max_burn_alt ) { burn_alt = max_burn_alt; flags::control_flags::burn_alt_over_safe_thresh = true; }
 				else { flags::control_flags::burn_alt_over_safe_thresh = false; }
 
-				velocity_at_burn_alt = -sqrtf(nav::velocity.x*nav::velocity.x + 2*nav::acceleration_l.len() * ( nav::position.x - burn_alt ));
+				// velocity_at_burn_alt = -sqrtf(nav::velocity.x*nav::velocity.x + 2*nav::acceleration_l.len() * ( nav::position.x - burn_alt ));
 				
-				if ( !isnanf(velocity_at_burn_alt) ) {
+				// if ( !isnanf(velocity_at_burn_alt) ) {
 
-					burn_time = -velocity_at_burn_alt / (adjusted_thrust);
-					if ( burn_time > max_target_burn_time ) { comp += 0.005; }
-					if ( burn_time < min_target_burn_time ) { comp -= 0.005; }
+				// 	burn_time = -velocity_at_burn_alt / (adjusted_thrust);
+				// 	if ( burn_time > max_target_burn_time ) { comp += 0.005; }
+				// 	if ( burn_time < min_target_burn_time ) { comp -= 0.005; }
 
-				}
+				// }
 
 				alt_to_start_burn = burn_alt - nav::velocity.x*ignition_delay_time;
 				if ( nav::position.x + nav::velocity.x*0.005 < alt_to_start_burn ) { flags::control_flags::start_landing_burn = true; }
@@ -261,11 +255,6 @@ namespace control {
 
 	void update() {
 
-		if ( !vehicle_has_control() ) {
-			perif::servo_1_position = servo_neutral + servo_1_offset;
-			perif::servo_2_position = servo_neutral + servo_2_offset;            
-		}
-
 		/*
 
 		// servo sweep code
@@ -280,6 +269,14 @@ namespace control {
 		*/
 
 		target_vector = vec3(1.0, 0.0, 0.0);
+
+		#ifdef SITL
+
+		if ( timing::get_MET() > 1000000 && timing::get_MET() < 3000000 ) {
+			target_vector.y = 0.05;
+		}
+
+		#endif
 		
 		// ================================================================
 		// live simulation
@@ -399,8 +396,11 @@ namespace control {
 			ang_acc_error.y -= pid_ori_y.output;
 			ang_acc_error.z -= pid_ori_z.output;
 
-			pid_ori_y.updateWithDerivative(angle_error.y, ((-angle_error.y*0)-nav::rotational_velocity.y), 0.01);
-			pid_ori_z.updateWithDerivative(angle_error.z, ((-angle_error.z*0)-nav::rotational_velocity.z), 0.01);
+			// pid_ori_y.update_with_target_derivative(angle_error.y, -nav::rotational_velocity.y, 3.f*angle_error.y, 0.01);
+			// pid_ori_z.update_with_target_derivative(angle_error.z, -nav::rotational_velocity.z, 3.f*angle_error.z, 0.01);
+
+			pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
+			pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
 
 			ang_acc_out.y = pid_ori_y.output;
 			ang_acc_out.z = pid_ori_z.output;           
@@ -414,26 +414,26 @@ namespace control {
 				// pid_ori_y.output -= (ang_acc_error.y*0.25);
 				// pid_ori_z.output -= (ang_acc_error.z*0.25);
 
-				angle_out.y = (pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x);
-				angle_out.z = (pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x);
+				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
+				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
 			
 			} else if ( get_vehicle_state() == state_landing_start ) {
 			
 				// calculate angle for the peak thrust of the landing burn
-				angle_out.y = (pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x);
-				angle_out.z = (pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x);
+				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x), -1.f, 1.f));
+				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x), -1.f, 1.f));
 			
 			}    
 
 			angle_out.y *= 180.f/PI;
 			angle_out.z *= 180.f/PI;
 			
-			perif::servo_1_position = uint16_t( (angle_out.z * 37.5f) + servo_1_offset + servo_neutral);
-			perif::servo_2_position = uint16_t( (angle_out.y * 37.5f) + servo_2_offset + servo_neutral);
-
-			perif::servo_1_position = clamp(perif::servo_1_position, servo_1_min, servo_1_max);
-			perif::servo_2_position = clamp(perif::servo_2_position, servo_2_min, servo_2_max);            
+			perif::servo_1_position = uint16_t( perif::servo_1_offset + perif::servo_neutral + (angle_out.z * 37.5f) );
+			perif::servo_2_position = uint16_t( perif::servo_2_offset + perif::servo_neutral + (angle_out.y * 37.5f) );
 		
+		} else {
+			perif::servo_1_position = perif::servo_neutral + perif::servo_1_offset;
+			perif::servo_2_position = perif::servo_neutral + perif::servo_2_offset;
 		}
 
 	}

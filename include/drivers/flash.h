@@ -15,6 +15,7 @@ enum flash_commands {
   alt_chip_erase  = 0x60,
   status_reg_1    = 0x05,
   read_data       = 0x03,
+  read_data_fast  = 0x0b,
   page_program    = 0x02,
   jdec_id         = 0x9f
 } flash_commands;
@@ -67,11 +68,11 @@ bool get_jdec(uint cs, uint8_t *b1, uint8_t *b2, uint8_t *b3) {
 
 }
 
-bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
+bool get_sreg(uint cs, uint8_t *b1, uint8_t *b2) {
 	
 	#ifndef USE_INTERNAL_FLASH
 
-	while(flash_busy(cs)) {;}
+	if (flash_busy(cs)) {return 0;}
 
 	gpio_put(cs, 1);
 	gpio_put(cs, 0);
@@ -81,6 +82,56 @@ bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 	gpio_put(cs, 1);
 	gpio_put(cs, 0);
 
+	flash_send_byte(0x05);
+	spi_read_blocking(spi0, 0, b1, 1);
+
+	gpio_put(cs, 1);
+	gpio_put(cs, 0);
+
+	flash_send_byte(0x35);
+	spi_read_blocking(spi0, 0, b2, 1);
+
+	gpio_put(cs, 1);
+
+	#endif
+	
+	return 1;
+
+}
+
+bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
+	
+	#ifndef USE_INTERNAL_FLASH
+
+	while(flash_busy(cs)) {;}
+
+	uint64_t t_start = time_us_64();
+
+	while(1) {
+		uint8_t t;
+
+		gpio_put(cs, 1);
+		gpio_put(cs, 0);
+		
+		flash_send_byte(write_enable);
+
+		gpio_put(cs, 1);
+		gpio_put(cs, 0);
+
+		flash_send_byte(0x05);
+		spi_read_blocking(spi0, 0, &t, 1);
+
+		gpio_put(cs, 1);
+
+		if ( (t&2) == 2) {
+			break;
+		}
+
+		if ( time_us_64() > t_start+1000 ) { return 0; }
+
+	}
+
+	gpio_put(cs, 0);
 	flash_send_byte(page_program);
 	flash_send_byte((page_number>>8) & 0xff);
 	flash_send_byte(page_number & 0xff);
@@ -89,20 +140,15 @@ bool flash_write_page(uint cs, uint16_t page_number, uint8_t *buf) {
 	int err = spi_write_blocking(spi0, buf, 256);
 
 	gpio_put(cs, 1);
-	gpio_put(cs, 0);
-	
-	flash_send_byte(write_disable);
-
-	gpio_put(cs, 1);
 
 	return err > 1 ? 1 : 0;
 
 	#else
 
 	multicore_lockout_start_blocking();
-
-	flash_range_program( (1024 * 512) + page_number*256, buf, 256);
-
+	uint32_t ints = save_and_disable_interrupts();
+	flash_range_program( (1024 * 1024) + page_number*256, buf, 256);
+	restore_interrupts(ints);
 	multicore_lockout_end_blocking();
 
 	return 1;
@@ -185,11 +231,19 @@ bool flash_read_page(uint cs, uint16_t page_number, uint8_t *buf) {
 
 	#else
 
-	multicore_lockout_start_blocking();
+	// multicore_lockout_start_blocking();
+	// uint32_t ints = save_and_disable_interrupts();
 
-	memcpy(buf, (uint8_t*) ( XIP_BASE + ( (1024 * 512) + page_number*256) ), 256);
+	uint8_t* ptr = (uint8_t*)(XIP_BASE + ( (1024 * 512) + page_number*256));
 
-	multicore_lockout_end_blocking();
+	for ( int i = 0; i < 256; i++ ) {
+		buf[i] = ptr[i];
+	}
+
+	// memcpy(buf, (uint8_t*) ( XIP_BASE + ( (1024 * 512) + page_number*256) ), 256);
+	
+	// restore_interrupts(ints);
+	// multicore_lockout_end_blocking();
 
 	return 1;
 
@@ -252,10 +306,12 @@ bool flash_erase_chip(uint cs) {
 	#else
 
 	multicore_lockout_start_blocking();
+	uint32_t ints = save_and_disable_interrupts();
 
 	// erase 3MB of flash (0.5 - 3.5MB of 4 total)
-	flash_range_erase((1024 * 512), 1024*1024*3);
+	flash_range_erase((1024 * 512), 1024*1024*1);
 
+	restore_interrupts(ints);
 	multicore_lockout_end_blocking();
 
 	#endif

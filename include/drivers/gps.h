@@ -332,26 +332,28 @@ namespace gps {
 		
 		i2c_init(i2c0, 400000);
 
+        i2c_set_baudrate(i2c0, 400000);
+
 		uint8_t val = 0xfd;
 		uint8_t rx_buf[2];
 
 		// perform a dummy read of the number of bytes available to see if the device is there
 
-        printf("finding device...");
+        debugprintf_gps("finding device...");
 
 		int err = i2c_write_blocking(i2c0, gps_addr, &val, 1, true);
-		if ( err != 1 ) { printf("[FAILED]\n"); return false; }
+		if ( err != 1 ) { debugprintf_gps("[FAILED]\n"); return false; }
 		err = i2c_read_blocking(i2c0, gps_addr, rx_buf, 2, false);
-		if ( err != 2 ) { printf("[FAILED]\n"); return false; }
+		if ( err != 2 ) { debugprintf_gps("[FAILED]\n"); return false; }
 
-        printf("[OK]\n");
+        debugprintf_gps("[OK]\n");
 
 		ubx_message_t cfg_msg;
 
         // ==========================================
         // configure protocols
 
-        printf("configuring port protocol...");
+        debugprintf_gps("configuring port protocol...");
 
         cfg_msg.sync_a = 0xb5;
         cfg_msg.sync_b = 0x62;
@@ -400,14 +402,14 @@ namespace gps {
         i2c_read_blocking(i2c0, gps_addr, i2c_rx_buf, available_bytes, false);
 
         if ( process_message(&cfg_msg, i2c_rx_buf) ) {
-            if ( cfg_msg.cls == 5 && cfg_msg.id == 1) { printf("[OK]\n"); }
-            else { printf("[FAILED]\n"); return false;}
-        } else { printf("[FAILED]\n");  return false;}
+            if ( cfg_msg.cls == 5 && cfg_msg.id == 1) { debugprintf_gps("[OK]\n"); }
+            else { debugprintf_gps("[FAILED]\n"); return false;}
+        } else { debugprintf_gps("[FAILED]\n");  return false;}
 
         // ==========================================
         // message rate cfg
 
-        printf("configuring nav update rate...");
+        debugprintf_gps("configuring nav update rate...");
         
         cfg_msg.sync_a = 0xb5;
         cfg_msg.sync_b = 0x62;
@@ -437,14 +439,14 @@ namespace gps {
         i2c_read_blocking(i2c0, gps_addr, i2c_rx_buf, available_bytes, false);
 
         if ( process_message(&cfg_msg, i2c_rx_buf) ) {
-            if ( cfg_msg.cls == 5 && cfg_msg.id == 1) { printf("[OK]\n"); }
-            else { printf("[FAILED]\n"); return false;}
-        } else { printf("[FAILED]\n");  return false;}
+            if ( cfg_msg.cls == 5 && cfg_msg.id == 1) { debugprintf_gps("[OK]\n"); }
+            else { debugprintf_gps("[FAILED]\n"); return false;}
+        } else { debugprintf_gps("[FAILED]\n");  return false;}
 
         // ==========================================
         // poll rate cfg
 
-        printf("configuring nav poll rate...");
+        debugprintf_gps("configuring nav poll rate...");
 
         cfg_msg.sync_a = 0xb5;
         cfg_msg.sync_b = 0x62;
@@ -468,22 +470,22 @@ namespace gps {
         i2c_read_blocking(i2c0, gps_addr, i2c_rx_buf, available_bytes, false);
 
         if ( process_message(&cfg_msg, i2c_rx_buf) ) {
-            if ( cfg_msg.cls == 5 && cfg_msg.id == 1) { printf("[OK]\n"); }
-            else { printf("[FAILED]\n"); return false;}
-        } else { printf("[FAILED]\n");  return false;}
+            if ( cfg_msg.cls == 5 && cfg_msg.id == 1) { debugprintf_gps("[OK]\n"); }
+            else { debugprintf_gps("[FAILED]\n"); return false;}
+        } else { debugprintf_gps("[FAILED]\n");  return false;}
 
         i2c_rx_buf_pos = 0;
         
         // ==========================================
-		
+		i2c_set_baudrate(i2c0, 1000000);
 		return true;
 	}
 
 	void update() {	
-
+        i2c_set_baudrate(i2c0, 400000);
 		uint16_t available_bytes = get_available_bytes();
         if ( available_bytes == 0 ) { return; }
-        printf("%i\n", available_bytes);
+        debugprintf_gps("%i\n", available_bytes);
         // limit available bytes to remaining buffer size
         if ( available_bytes + i2c_rx_buf_pos > 1024) { available_bytes = 1024 - i2c_rx_buf_pos; }
 
@@ -497,15 +499,15 @@ namespace gps {
             
             ubx_message_t msg;
             if (!process_message(&msg, i2c_rx_buf)) {
-                printf("couldnt process message\n");
+                debugprintf_gps("couldnt process message\n");
                 return;
             } else {
 
-                printf("message class: %i\n", msg.cls);
-                printf("message id: %i\n", msg.id);
+                debugprintf_gps("message class: %i\n", msg.cls);
+                debugprintf_gps("message id: %i\n", msg.id);
 
-                printf("payload 0: %i\n", msg.payload[0]);
-                printf("payload 1: %i\n", msg.payload[1]);
+                debugprintf_gps("payload 0: %i\n", msg.payload[0]);
+                debugprintf_gps("payload 1: %i\n", msg.payload[1]);
                 
                 // if this message is a PVT fix
                 if ( msg.cls==0x01 && msg.id==0x07 ) {
@@ -519,12 +521,12 @@ namespace gps {
             }
 
         } else {
-            printf("invalid packet\n");
+            debugprintf_gps("invalid packet\n");
         }
 
-        if ( multiple_packets ) { printf("multiple packets found\n"); }
+        if ( multiple_packets ) { debugprintf_gps("multiple packets found\n"); }
 
-
+        i2c_set_baudrate(i2c0, 1000000);
 	}
-
+    
 };

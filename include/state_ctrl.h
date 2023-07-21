@@ -29,19 +29,23 @@ namespace state {
 
 			case (state_idle) : {
 
-				if ( !flags::perif_flags::switch_sts ) { switch_has_been_low = true; }
+				// if ( !flags::perif_flags::switch_sts ) { switch_has_been_low = true; }
 
-				if ( flags::perif_flags::switch_sts && switch_has_been_low ) {
-					switch_has_been_low = false;
-					set_vehicle_state(state_nav_init);
-				}
+				// if ( flags::perif_flags::switch_sts && switch_has_been_low ) {
+				// 	switch_has_been_low = false;
+				// 	set_vehicle_state(state_nav_init);
+				// }
 
 				break;
 			}
 
 			case (state_nav_init) : {
 
+				#ifdef USE_GPS
+				if ( flags::nav_flags::baro_debiased && flags::nav_flags::gyro_debiased && flags::nav_flags::gps_initial_position_lock ) {
+				#else
 				if ( flags::nav_flags::baro_debiased && flags::nav_flags::gyro_debiased ) {
+				#endif
 					set_vehicle_state(state_launch_idle);
 				}
 
@@ -100,17 +104,27 @@ namespace state {
 
 				if ( timing::get_t_apogee() == 0 ) { timing::set_t_apogee(time_us_64()); }
 
-				// if ( flags::control_flags::start_landing_burn ) {
-				//     set_vehicle_state(state_landing_start);
-				// }
+				#ifdef LANDING_HW_EN
 
-				if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+				if ( flags::control_flags::start_landing_burn ) {
+				    set_vehicle_state(state_landing_start);
+					#ifdef SITL
+					int32_t rand_offset = (rand()%100000)-50000;
+					timing::set_t_landing_burn_start(time_us_64()+200000+rand_offset);
+					#endif
+				}
+
+				#else
+
+				if ( flags::state_flags::accel_within_landed_threshold || flags::state_flags::gyro_within_landed_threshold ) {
 					landing_detect_timer++;
 				} else {
 					landing_detect_timer = 0;
 				}
 
 				if ( landing_detect_timer > 100 ) { set_vehicle_state(state_landed); }
+				
+				#endif
 
 				break;
 			}
@@ -118,6 +132,8 @@ namespace state {
 			case (state_landing_start) : {
 
 				if ( timing::get_t_apogee() == 0 ) { timing::set_t_apogee(time_us_64()); }
+
+				#ifdef LANDING_HW_EN
 
 				if ( flags::state_flags::accel_over_landing_threshold ) { accel_landing_burn_timer++; }
 				else { accel_landing_burn_timer = 0; }
@@ -129,7 +145,9 @@ namespace state {
 
 				current_state_timer = accel_landing_burn_timer;
 
-				if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+				#endif
+
+				if ( flags::state_flags::accel_within_landed_threshold || flags::state_flags::gyro_within_landed_threshold ) {
 					landing_detect_timer++;
 				} else {
 					landing_detect_timer = 0;
@@ -145,7 +163,7 @@ namespace state {
 
 				if ( (time_us_64() > timing::get_t_landing_burn_start()+1700000) || ( nav::position.x < 0.5f ) ) { set_vehicle_state(state_landing_terminal); }
 
-				if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+				if ( flags::state_flags::accel_within_landed_threshold || flags::state_flags::gyro_within_landed_threshold ) {
 					landing_detect_timer++;
 				} else {
 					landing_detect_timer = 0;
@@ -158,7 +176,7 @@ namespace state {
 
 			case (state_landing_terminal) : {
 
-				if ( flags::state_flags::accel_within_landed_threshold && flags::state_flags::gyro_within_landed_threshold ) {
+				if ( flags::state_flags::accel_within_landed_threshold || flags::state_flags::gyro_within_landed_threshold ) {
 					landing_detect_timer++;
 				} else {
 					landing_detect_timer = 0;

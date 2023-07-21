@@ -26,6 +26,8 @@ namespace radio {
 
 	bool init() {
 
+		#ifdef USE_RADIO
+
 		gpio_set_function(0, GPIO_FUNC_UART);
 		gpio_set_function(1, GPIO_FUNC_UART);
 		uart_set_baudrate(uart0, 115200);
@@ -53,12 +55,14 @@ namespace radio {
 								0,
 								false);
 
-
+		#endif
 		return 1;
 
 	}
 
 	void update() {
+
+		#ifdef USE_RADIO
 
 		if ( radio_tx_buf_position ) {
 
@@ -74,6 +78,8 @@ namespace radio {
 
 			radio_tx_buf_position = 0;
 		}
+
+		#endif
 
 	}
 

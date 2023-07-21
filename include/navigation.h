@@ -1,3 +1,5 @@
+#pragma once
+
 #include "core.h"
 
 #include "drivers/pins.h"
@@ -5,8 +7,16 @@
 #include "drivers/lis2mdl.h"
 #include "drivers/lsm6dso32.h"
 #include "drivers/gps.h"
+#include "kalman.h"
 
-#pragma once
+#ifdef SITL
+
+#include "drivers/perif_ctrl.h"
+#include "simulation.h"
+
+#endif
+
+
 
 namespace nav {
 
@@ -34,182 +44,18 @@ namespace nav {
 	   1.00932801, 1.01115028, 1.01295869, 1.01475346, 1.01653483,
 	   1.01830301 };
 
-	float fast_pow(float P) {
-		if ( P < 0.0f ) { return 0.0f; }
-		int idx = int(P * 100.f);
-		float diff = P * 100.f - idx;
-		if (idx >= 110) {
-			return 1.01830301;
-		}
-		return altLUT[idx] * (1 - diff) + diff * altLUT[idx + 1];
-	}
+	float fast_pow(float P);
 
-	class kalman_1dof {
-
-		matrix<float, 3, 3> Hk_x    = { 1.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Hk_xdx  = { 1.0f, 0.0f, 0.0f,
-										0.0f, 1.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Hk_dx   = { 0.0f, 0.0f, 0.0f,
-										0.0f, 1.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Hk_ddx  = { 0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 1.0f};
-
-		matrix<float, 3, 3> Hk_xddx = { 1.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 1.0f};
-
-		matrix<float, 3, 3> K       = { 0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Rk      = { 0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Qk      = { 0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Pk      = { 0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f,
-										0.0f, 0.0f, 0.0f};
-
-		matrix<float, 3, 3> Fk      = { 1.0f, 0.0f, 0.0f, 
-										0.0f, 1.0f, 0.0f, 
-										0.0f, 0.0f, 1.0f};
-
-		matrix<float, 3, 1> Xk      = {0.0f, 0.0f, 0.0f};
-		matrix<float, 3, 1> Zk      = {0.0f, 0.0f, 0.0f};
-		matrix<float, 3, 1> BUk     = {0.0f, 0.0f, 0.0f};
-
-	public:
-
-		kalman_1dof() {};
-
-		void set_R(float R_a, float R_b, float R_c) {
-			this->Rk(0, 0) = R_a;
-			this->Rk(1, 1) = R_b;
-			this->Rk(2, 2) = R_c;
-		}
-
-		void set_Q(float Q_a, float Q_b, float Q_c) {
-			this->Qk(0, 0) = Q_a;
-			this->Qk(1, 1) = Q_b;
-			this->Qk(2, 2) = Q_c;
-		}
-
-		void predict(float accel, float dt) {
-			float dt_dt_2 = (dt*dt)/2.0f;
-
-			Fk(0, 1) = dt;
-			Fk(1, 2) = dt;
-			Fk(0, 2) = dt_dt_2;
-
-			BUk(0, 0) = accel * dt_dt_2;
-			BUk(0, 1) = accel * dt;
-
-			Xk = (Fk*Xk)+BUk;
-			Pk = Fk*Pk*~Fk + Qk;
-
-			// Xk = (Fk*Xk)+BUk;
-			// Pk = Fk*Pk*Fk + Qk;
-		};
-
-		void update_position(float pos) {
-			Zk(0, 0) = pos;
-			
-			// temporary inverted matrix
-			auto tmp = Hk_x*Pk*~Hk_x + Rk; // unnecesarry transpose
-			// auto tmp = Hk_x*Pk*Hk_x + Rk;
-
-			// returned true if inversion was successful? 
-			bool good_invert;
-			tmp = tmp.invert(&good_invert, 0.001f);
-			
-			if ( good_invert ) {
-				K = Pk*~Hk_x * tmp; // unecesarry transpose
-				Xk = Xk + K*(Zk - Hk_x*Xk);
-				Pk = Pk - K*Hk_x*Pk;
-				
-				// K =  Pk * Hk_x * tmp;
-				// Xk = Xk + K * (Zk - Hk_x * Xk);
-				// Pk = Pk - K * Hk_x * Pk;
-
-			}
-		};
-
-		void update_velocity(float vel) {
-			Zk(0, 1) = vel;
-			
-			auto tmp = Hk_dx*Pk*Hk_dx + Rk;
-
-			bool good_invert;
-			tmp = tmp.invert(&good_invert, 0.001f);
-
-			if ( good_invert ) {
-				K = Pk * Hk_dx * tmp;
-				Xk = Xk + K * (Zk - Hk_dx * Xk);
-				Pk = Pk - K * Hk_dx * Pk;
-			}
-		};
-
-		void update_posvel(float pos, float vel) {
-			Zk(0, 0) = pos;
-			Zk(0, 1) = vel;
-
-			auto tmp = Hk_xdx*Pk*Hk_xdx + Rk;
-
-			bool good_invert;
-			tmp = tmp.invert(&good_invert, 0.001f);
-
-			if ( good_invert ) {
-				K = Pk*Hk_xdx * tmp;
-				Xk = Xk + K*(Zk - Hk_xdx*Xk);
-				Pk = Pk - K*Hk_xdx*Pk;
-			}
-		};
-
-		void update_posacc(float pos, float acc) {
-			Zk(0, 0) = pos;
-			Zk(0, 2) = acc;
-
-			auto tmp = Hk_xddx*Pk*Hk_xddx + Rk;
-			
-			bool good_invert;
-			tmp = tmp.invert(&good_invert, 0.001f);
-
-			if ( good_invert ) {
-				K = Pk*Hk_xddx * tmp;
-				Xk = Xk + K*(Zk - Hk_xddx*Xk);
-				Pk = Pk - K*Hk_xddx*Pk;
-			}
-		};
-
-		void get_covariances(float &cov_x, float &cov_dx, float &cov_ddx) {
-			cov_x = Pk(0, 0);
-			cov_dx = Pk(1, 1);
-			cov_ddx = Pk(2, 2);
-		}
-		
-		void get_states(float &x, float &dx, float &ddx) {
-			x = Xk(0, 0);
-			dx = Xk(0, 1);
-			ddx = Xk(0, 2);
-		}
-	
-	};
-
-	float mass = 0.666;
+	const float dry_mass = 0.7;
+	float mass = 0.7;
 	vec3<float> moment_of_inertia = vec3(0.01, 0.03587682209, 0.03587682209);
 
+	const float motor_mass_ascent_start = 0.118;
+	const float motor_mass_ascent_end   = 0.082;
+
+	const float motor_mass_descent_start = 0.059;
+	const float motor_mass_descent_end   = 0.033;
+	
 	const vec3<float> gravity(9.816, 0.0, 0.0);
 
 	quat<float> rotation;
@@ -251,7 +97,7 @@ namespace nav {
 
 	float pad_altitude;
 
-	namespace timing {
+	namespace nav_timing {
 	
 		uint64_t last_nav_update_us = 0;
 		
@@ -278,10 +124,6 @@ namespace nav {
 		
 		uint32_t pressure;
 		int32_t temperature;
-		
-		uint32_t process_time = 0;
-		uint32_t read_time = 0;
-		uint32_t total_time = 0;
 
 		vec3<int16_t> mag;
 
@@ -302,7 +144,7 @@ namespace nav {
 		// R is measurement uncertainty
 
 		kalman_x.set_Q(100.0f, 1600.f, 1600.f);
-		kalman_x.set_R(75000.0f, 1.0f, 1.0f);
+		kalman_x.set_R(125000.0f, 1.0f, 1.0f);
 
 		kalman_y.set_Q(1200.f, 800.f, 1600.f);
 		kalman_y.set_R(25000.f, 1.f, 1.f);
@@ -349,12 +191,28 @@ namespace nav {
 
 		printf("Done\n\n");	
 
+		#ifdef SITL
+		printf("WARNING: SITL IS ENABLED - ALL SENSOR DATA WILL BE IGNORED\n");
+		#endif
+
 		printf("============================================================================\n");
 
 		return 1;
 	};
 
 	void update() {
+
+		// if ( timing::get_MET() && timing::get_MET() < 2600000 ) {
+		// 	float burn_percent = ((float)timing::get_MET())/2600000.f;
+		// 	mass = dry_mass + (motor_mass_ascent_start*(1.f-burn_percent)) + (motor_mass_ascent_end*(burn_percent));
+		// }
+
+		// if ( timing::get_t_landing_burn_start() && (time_us_64()-timing::get_t_landing_burn_start()) < 2600000) {
+		// 	float burn_percent = ((float)(time_us_64()-timing::get_t_landing_burn_start()))/2600000.f;
+		// 	mass = dry_mass + (motor_mass_descent_start*(1.f-burn_percent)) + (motor_mass_descent_end*(burn_percent));
+		// }
+
+		#ifndef SITL
 
 		// ============================================================================
 		// barometer
@@ -378,9 +236,9 @@ namespace nav {
 			if ( !flags::nav_flags::baro_debiased && altitude_asl < 500.f) {
 
 				pad_altitude += altitude_asl;
-				timing::baro_bias_count++;
+				nav_timing::baro_bias_count++;
 
-				if ( timing::baro_bias_count == baro_bias_count ) {
+				if ( nav_timing::baro_bias_count == baro_bias_count ) {
 					flags::nav_flags::baro_debiased = true;
 					pad_altitude /= (float)baro_bias_count;
 				}
@@ -388,7 +246,7 @@ namespace nav {
 			} else {
 
 				altitude = altitude_asl - pad_altitude;
-				if ( get_vehicle_state() == state_nav_init && altitude > 0.25 ) { flags::nav_flags::baro_debiased = false; timing::baro_bias_count = 0; }
+				if ( get_vehicle_state() == state_nav_init && altitude > 0.25 ) { flags::nav_flags::baro_debiased = false; nav_timing::baro_bias_count = 0; }
 
 				kalman_x.update_position(altitude);
 
@@ -408,39 +266,43 @@ namespace nav {
 			flags::nav_flags::gps_drdy = false;
 			
 			if ( lat != 0.0 && lon != 0.0 && gps_n_sats > 5 ) {
+				
+				float rlat = lat*PI/180.f;
+				float rlon = lon*PI/180.f;
 
 				if ( gps_n_zero_offset_measurements < 100 && !gps_zero_offset_lock ) {
 
 					gps_n_zero_offset_measurements++;
 
 					if ( lat_initial == 0 ) { 
-						lat_initial = lat*PI/180.f; 
-						lon_initial = lon*PI/180.f; 
+						lat_initial = rlat; 
+						lon_initial = rlon; 
 					}
 					else {
 
-						float measurement_displacement = DBPf(lat_initial/gps_n_zero_offset_measurements, lon_initial/gps_n_zero_offset_measurements, lat, lon);
+						float measurement_displacement = DBPf(lat_initial/gps_n_zero_offset_measurements, lon_initial/gps_n_zero_offset_measurements, rlat, rlon);
 						if ( measurement_displacement > 5 ) { 
 							gps_n_zero_offset_measurements = 0;
 							lat_initial = 0;
 							lon_initial = 0;
 						} else {
-							lat_initial += lat*PI/180.f;
-							lon_initial += lon*PI/180.f;
+							lat_initial += rlat;
+							lon_initial += rlon;
 						}
 
 					}
 
 					if ( gps_n_zero_offset_measurements >= 100 ) {
 						gps_zero_offset_lock = true;
+						flags::nav_flags::gps_initial_position_lock = true;
 						lat_initial /= 100.0f;
 						lon_initial /= 100.0f;
 					}
 
 				} else {
 
-					float distance_from_launchpad = DBPf(lat_initial, lon_initial, lat*PI/180.f, lon*PI/180.f);
-					float angle_from_launchpad = CBPf(lat_initial, lon_initial, lat*PI/180.f, lon*PI/180.f);
+					float distance_from_launchpad = DBPf(lat_initial, lon_initial, rlat, rlon);
+					float angle_from_launchpad = CBPf(lat_initial, lon_initial, rlat, rlon);
 
 					// position_gps.x = gps_alt - baro_alt_offs;
 					position_gps.y = distance_from_launchpad * cosf(angle_from_launchpad);
@@ -454,13 +316,14 @@ namespace nav {
 		}
 
 		#else
-
+		if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {			
+			kalman_y.update_posvel(0, 0);
+			kalman_z.update_posvel(0, 0);
+		}
 		#endif
 
 		// ============================================================================
 		// IMU
-
-		uint32_t t_read_start = time_us_32();
 
 		// get the amount of available fifo frames
 		int n_fifo_frames = imu.n_fifo_frames();
@@ -500,9 +363,6 @@ namespace nav {
 
 		}
 
-		raw::read_time = time_us_32() - t_read_start;
-		uint32_t t_process_start = time_us_32();
-
 		// ================================================
 		// gyroscope
 
@@ -525,17 +385,17 @@ namespace nav {
 					if ( !flags::nav_flags::gyro_debiased ) {
 						float rotational_velocity_magnitude = rotational_velocity.len();
 						
-						if ( rotational_velocity_magnitude < 0.025 ) {
+						if ( rotational_velocity_magnitude < 0.04 ) {
 							rotational_velocity_bias += rotational_velocity;
-							timing::gyro_bias_count++;
+							nav_timing::gyro_bias_count++;
 
-							if ( timing::gyro_bias_count >= gyro_bias_count ) {
+							if ( nav_timing::gyro_bias_count >= gyro_bias_count ) {
 								flags::nav_flags::gyro_debiased = true;
 								rotational_velocity_bias /= float(gyro_bias_count);
 							}
 						} else { 
 							if ( rotational_velocity_magnitude > 0.08 ) {
-								timing::gyro_bias_count = 0;
+								nav_timing::gyro_bias_count = 0;
 								rotational_velocity_bias = vec3();
 							} 
 						}
@@ -593,15 +453,6 @@ namespace nav {
 
 			}
 
-			#ifndef USE_GPS
-
-			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {			
-				kalman_y.update_posvel(0, 0);
-				kalman_z.update_posvel(0, 0);
-			}
-
-			#endif
-
 			if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {
 
 				// if accel is within +- 6 degrees of current orientation, mark orientation as converged
@@ -616,6 +467,91 @@ namespace nav {
 			}
 
 		}
+
+		#else
+		
+		float current_motor_thrust = 0;
+
+		if ( timing::get_MET() && timing::get_MET() < 2600000) {
+			int idx = timing::get_MET()/10000;
+			if ( idx > 259 ) { idx = 259; }
+			current_motor_thrust += simulation::e12_thrust[idx];
+		}
+
+		// if ( flags::control_flags::start_landing_burn && timing::get_t_landing_burn_start() == 0 ) {
+		// 	timing::set_t_landing_burn_start(time_us_64());
+		// }
+
+		if ( timing::get_t_landing_burn_start() && (time_us_64()-timing::get_t_landing_burn_start()) < 2600000) {
+			int idx = (time_us_64()-timing::get_t_landing_burn_start())/10000;
+			if ( idx > 259 ) { idx = 259; }
+			current_motor_thrust += simulation::e12_thrust[idx];
+		}
+		
+		vec3<float> tvc_angle = vec3<float>(0.0, perif::servo_2_position + ((time_us_32()&0xf0)>>4) - 8, perif::servo_1_position + (time_us_32()&0xf) - 8);
+		tvc_angle.y -= perif::servo_2_offset + perif::servo_neutral;
+		tvc_angle.z -= perif::servo_1_offset + perif::servo_neutral;
+		tvc_angle /= 37.5f;
+
+		vec3<float> motor_forces = quat<float>().from_eulers(0.0, tvc_angle.z*PI/180.f, tvc_angle.y*PI/180.f).rotate_vec(vec3<float>(current_motor_thrust, 0.0, 0.0));
+		vec3<float> motor_torques = vec3<float>(-0.26, 0.0, 0.0).cross(motor_forces);
+		rotational_acceleration = motor_torques/nav::moment_of_inertia;
+		
+		acceleration_i = vec3<float>(0.0, 0.0, 0.0);
+		acceleration_l = vec3<float>(0.0, 0.0, 0.0);
+		
+		if ( velocity.len() != 0.0 ) {
+
+			// self.aoa = velocity_relative_wind.angle_between_vectors(
+            //     self.rotation.rotate(Vec3(1.0, 0.0, 0.0)))
+
+			float aoa = velocity.angle_between_vectors(rotation.rotate_vec(vec3<float>(1.0, 0.0, 0.0)));
+			if ( aoa > PI/2 ) { aoa = PI/2 - aoa; }
+
+			// self.drag_coefficient = self.drag_coefficient_forwards + ((-np.cos(self.aoa)/2.0 + 0.5) * (self.drag_coefficient_sideways - self.drag_coefficient_forwards))
+            // self.drag_force = -velocity_relative_wind.normalize() * (self.drag_coefficient/2.0 * self.air_density * self.ref_area * (velocity_relative_wind.length()*velocity_relative_wind.length()))
+
+            // self.apply_point_force(self.drag_force, self.cp_location)
+            // self.apply_torque(self.rotational_velocity * -self.friction_coeff * self.air_density)
+
+			float drag_coeff = 0.56 + ((-cosf(aoa)/2.0 + 0.5) * (1.35-0.56));
+			vec3<float> drag_force = -velocity.norm() * ( drag_coeff/2.0 * 1.225 * 0.018 * (velocity.len()*velocity.len()) );
+			acceleration_i += drag_force/mass;
+			// rotational_acceleration += vec3<float>(-0.2, 0.0, 0.0).cross(drag_force)/moment_of_inertia;
+			rotational_acceleration -= rotational_velocity.norm()*0.001*1.225;
+
+		}
+
+		acceleration_i += rotation.rotate_vec(motor_forces)/mass;
+		acceleration_l = rotation.conjugate().rotate_vec(acceleration_i);
+		acceleration_i.x -= 9.816f;
+
+		rotational_velocity += rotational_acceleration*0.01;
+
+		float rotational_velocity_magnitude = rotational_velocity.len();
+		if ( rotational_velocity_magnitude > 0.00001f ) {
+			quat<float> q = quat<float>().from_axis_angle(rotational_velocity_magnitude * 0.01, rotational_velocity/rotational_velocity_magnitude);
+			rotation *= q;
+			rotation = rotation.normalize();
+		}
+
+		velocity += acceleration_i*0.01;
+		position += velocity*0.01;
+
+		if ( position.x <= 0.0 ) { 
+			position.x = 0.0; 
+			velocity.x = 0.0; 
+			velocity.y = 0.0; 
+			velocity.z = 0.0; 
+			rotational_velocity.x = 0.0;
+			rotational_velocity.y = 0.0;
+			rotational_velocity.z = 0.0;
+		}
+
+		raw::gyro = vec3<int16_t>(rotational_velocity/0.00106526443f);
+		raw::accel = vec3<int16_t>(acceleration_l/0.009765625f);
+		
+		#endif
 
 		// update all flags
 
@@ -635,10 +571,7 @@ namespace nav {
 		flags::state_flags::velocity_below_landed_threshold = (velocity.x > -0.1) && (velocity.x < 0.1);
 
 		raw::fifo_gyro_pos = 0;
-		raw::fifo_accel_pos = 0;
-
-		raw::process_time = time_us_32() - t_process_start;
-		raw::total_time = time_us_32() - t_read_start;
+		raw::fifo_accel_pos = 0;		
 
 	}
 
