@@ -2,12 +2,15 @@
 
 cmake_minimum_required(VERSION 3.13)
 
+# Pull in SDK (must be before project)
+include(pico_sdk_import.cmake)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
-# Initialise pico_sdk from installed location
-# (note this can come from environment, CMake cache etc)
-set(PICO_SDK_PATH "C:/Users/camku/Documents/Pico/pico-sdk")
+# # Initialise pico_sdk from installed location
+# # (note this can come from environment, CMake cache etc)
+# set(PICO_SDK_PATH "C:/Program Files/Raspberry Pi/Pico SDK v1.5.1/pico-sdk")
 
 set(PICO_BOARD pico CACHE STRING "Board type")
 
