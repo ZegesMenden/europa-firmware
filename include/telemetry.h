@@ -41,7 +41,17 @@ namespace telemetry {
 			case('d'): {
 				#ifndef SITL
 				if ( !vehicle_is_in_flight() && (vehicle_state != state_launch_detect) ) {
-					datalog::start_flash_export = true;
+					datalog::export_current_flight = true;
+				}
+				#else
+				datalog::start_flash_export = true;
+				#endif
+				break;
+			}
+			case('e'): {
+				#ifndef SITL
+				if ( !vehicle_is_in_flight() && (vehicle_state != state_launch_detect) ) {
+					datalog::export_past_flights = true;
 				}
 				#else
 				datalog::start_flash_export = true;
@@ -66,7 +76,9 @@ namespace telemetry {
 
 			// print radio data as a string
 
-			if ( datalog::start_flash_export ) { return; }
+			// if ( datalog::export_current_flight || datalog::export_past_flights ) { return; }
+
+			#if false
 
 			#ifdef USE_RADIO
 				radio::radio_tx_buf_position = sprintf((radio::radio_tx_buf+radio::radio_tx_buf_position), "%llu,%i,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%i,%f,%f,%f,%i\n",
@@ -121,6 +133,23 @@ namespace telemetry {
 						(float)gps::gps_pvt_raw.lon*1e-7,
 						(float)gps::gps_pvt_raw.h_acc*1e-3,
 						gps::gps_pvt_raw.n_sat);
+
+			#endif
+
+			#else
+
+			#ifdef USE_RADIO
+
+				memmove(radio::radio_tx_buf, &datalog::points, 256);
+				radio::radio_tx_buf_position = 256;
+			
+			#else
+
+				for ( int i = 0; i < 256; i++ ) {
+					printf("%c", ((char*)(&datalog::points))[i]);
+				}
+
+			#endif
 
 			#endif
 			
