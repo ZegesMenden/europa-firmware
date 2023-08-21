@@ -9,7 +9,7 @@
 #include "mmath.h"
 #include "drivers/pins.h"
 
-// ============================================================================
+// ===========================================================================
 // general settings
 
 // enable pyros
@@ -39,9 +39,10 @@
 // enable / disable hardware control of landing burn (motor ignition, state control logic)
 // #define LANDING_HW_EN
 
-// ============================================================================
+// ===========================================================================
 // thresholds for state switches
 
+// ======================================
 // launch detect
 
 // acceleration that the rocket must feel to increase the acceleration counter when in launch detect mode
@@ -50,6 +51,7 @@ const static float launch_detect_accel_threshold = 12.f;
 // number of acceleration readings over the acceleration threshold required to trigger launch detection
 const static int launch_detect_accel_count = 10;
 
+// ======================================
 // burnout detect
 
 // acceleration that the rocket must be below to increase the acceleration counter when in burnout detect mode
@@ -58,6 +60,7 @@ const static float burnout_detect_accel_threshold = 2.f;
 // number of acceleration readings under the acceleration threshold required to trigger burnout detection
 const static int burnout_detect_accel_count = 15;
 
+// ======================================
 // apogee detect
 
 // velocity that the rocket must be below to detect apogee
@@ -72,7 +75,7 @@ const static float landing_detect_accel_threshold = 0.8f;
 // deviation from 0 rad/s that rocket can feel to be landed
 const static float landing_detect_ori_threshold = 0.0698132f;
 
-// ============================================================================
+// ===========================================================================
 // NAV settings
 
 // number of samples to take to determine gyroscope bias
@@ -81,24 +84,72 @@ const static uint16_t gyro_bias_count = 2000;
 // number of samples to take to determine altitude offset
 const static uint16_t baro_bias_count = 200;
 
-// ============================================================================
+// ===========================================================================
+// vehicle information
+
+// ======================================
+// mass
+
+const static float f15_prop_mass = 0.06;
+const static float f15_casing_mass = 0.042;
+const static float f15_mass = f15_prop_mass + f15_casing_mass;
+const static float ascent_casing_mass = 0.0115;
+
+const static float dry_mass_no_engines = 0.899385;
+
+const static float mass_ascent_start = dry_mass_no_engines + f15_mass + f15_mass + ascent_casing_mass;
+const static float mass_ascent_end = dry_mass_no_engines + f15_mass + f15_casing_mass + ascent_casing_mass;
+
+const static float mass_descent_start = dry_mass_no_engines + f15_mass;
+const static float mass_descent_end = dry_mass_no_engines + f15_casing_mass;
+
+// ======================================
+// moment of inertia
+
+const static vec3<float> moi_ascent(0.001266, 0.05737, 0.05737);
+const static vec3<float> moi_descent(0.001266, 0.04577, 0.04577);
+
+// ======================================
+// CG and tvc lever
+
+const static vec3<float> tvc_position(0.006, 0.0, 0.0);
+
+const static vec3<float> cg_position_ascent(0.1748, 0.0, 0.0);
+const static vec3<float> cg_position_descent(0.2089, 0.0, 0.0);
+
+const static vec3<float> tvc_lever_ascent = cg_position_ascent - tvc_position;
+const static vec3<float> tvc_lever_descent = cg_position_descent - tvc_position;
+
+// ===========================================================================
+// control settings
+
+// ======================================
+// leg deployment
+
+// altitude AGL to deploy legs
+const static float leg_deployment_alt = 3.0;
+
+// time from landing to deploy legs
+const static float leg_deployment_time = 1.5;
+
+// ===========================================================================
 // pyro settings
 
 uint32_t pyro_1_fire_dur_us = 500000;
-uint32_t pyro_2_fire_dur_us = 0;
+uint32_t pyro_2_fire_dur_us = 500000;
 uint32_t pyro_3_fire_dur_us = 0;
 
 const static bool pyro_1_en = true;
-const static bool pyro_2_en = false;
+const static bool pyro_2_en = true;
 const static bool pyro_3_en = false;
 
-// ============================================================================
+// ===========================================================================
 // internal communication bus settings
 
 #define spi_default_baud 2000000
 #define spi_flash_baud 4000000
 
-// ============================================================================
+// ===========================================================================
 // global flags and variables
 
 #define PI 3.14159265359
@@ -173,7 +224,10 @@ namespace flags {
 	namespace control_flags {
 
 		volatile bool start_landing_burn = false;
+		volatile bool divert_end = false;
+
 		volatile bool burn_alt_over_safe_thresh = false;
+		volatile bool burn_alt_under_safe_thresh = false;
 
 		volatile bool new_ascent_sim_result = false;
 		volatile bool new_landing_sim_result = false;
@@ -288,7 +342,7 @@ namespace timing {
 
 }
 
-// ============================================================================
+// ===========================================================================
 // vehicle state declaration and getters/setters
 
 enum system_state_t : uint8_t {
@@ -393,7 +447,7 @@ bool vehicle_has_control() {
 	}
 }
 
-// ============================================================================
+// ===========================================================================
 // peripheral bus flags and config
 
 struct _port_t {
@@ -443,7 +497,7 @@ _port_t qwiic_port3 = { 1,                              // pin0
 						GPIO_FUNC_UART,                  // gpio func
 						false};                          // bitbang flag
 
-// ============================================================================
+// ===========================================================================
 // functions that dont really belong anywhere else
 
 template <class T>
@@ -451,7 +505,7 @@ auto clamp(const T& x, const T& min, const T& max) { return x < min ? min : (x >
 
 void print_compile_config() {
 
-	printf("============================================================================\n\n");
+	printf("===========================================================================\n\n");
 	printf("COMPILE CONFIGS\n\n");
 	
 	#ifdef PYRO_EN
@@ -498,7 +552,7 @@ void print_compile_config() {
 	printf("%s is set to %f\n", vname(apogee_detect_vel_threshold), apogee_detect_vel_threshold);
 	printf("\n");
 
-	printf("============================================================================\n");
+	printf("===========================================================================\n");
 	
 }
 

@@ -34,7 +34,7 @@ namespace control {
 				error = setpoint - input;
 				P = kP * error;
 				I += error * kI * dt;
-				output = P + (derivative*kD) + I;
+				output = P + (-derivative*kD) + I;
 			}
 
 			void update_with_target_derivative(float input, float derivative, float target_derivative, float dt) {
@@ -48,32 +48,28 @@ namespace control {
 			float lastError, initInput, lastInput, P, I;
 	};
 
-	enum ctrl_mode_t {
-		ctrl_none,
-		ctrl_ori,
-		ctrl_vel,
-		ctrl_pos_vel,
-	};
-
-	ctrl_mode_t control_mode = ctrl_none;
+	// ===========================================================================
+	// setpoints
 
 	vec3<float> setpoint_position;
 	vec3<float> setpoint_velocity;
 	vec3<float> setpoint_orientation;
 	vec3<float> setpoint_tvc;
 
+	// ===========================================================================
+	// orientation control
+
 	vec3<float> target_vector;
+	vec3<float> angle_error;
+
 	vec3<float> ang_acc_out;
 	vec3<float> ang_acc_error;
 	vec3<float> angle_out;
-
-	vec3<float> angle_error;
-
-	vec3<float> desired_torque;
-	vec3<float> tvc_position;
-	vec3<float> tvc_lever = vec3(0.26, 0.0, 0.0);
-		
+	
 	float thrust;
+
+	// ===========================================================================
+	// simulation values
 
 	float simulation_energy_est;
 	float simulation_work_est;
@@ -82,27 +78,51 @@ namespace control {
 	float simulation_time_est;
 	uint32_t simulation_time_taken;
 
-	pid pid_ori_y(12, 0.0, 8, 0.0);
-	pid pid_ori_z(12, 0.0, 8, 0.0);
+	// ===========================================================================
+	// control coefficients
+
+	const float kp_ascent = 12.f;
+	const float ki_ascent = 0.f;
+	const float kd_ascent = 8.f;
+	const float target_d_coeff_ascent = 2.f;
+	
+	const float kp_descent = 12.f;
+	const float ki_descent = 0.f;
+	const float kd_descent = 8.f;
+	const float target_d_coeff_descent = 7.f;
+	
+	// ===========================================================================
+	// control variables
+
+	vec3<float> tvc_lever = tvc_lever_ascent;
+	
+	pid pid_ori_y(kp_ascent, ki_ascent, kd_ascent, 0.0);
+	pid pid_ori_z(kp_ascent, ki_ascent, kd_ascent, 0.0);
 
 	namespace gfield {
 
-		// constants
+		// motor charictaristics for F15
+		const float average_thrust = 14.5f;
+		const float motor_burn_time = 3.4f;
+		const float max_target_burn_time = 3.5f;
+		const float min_target_burn_time = 3.3f;
+		const float ignition_delay_time = 0.25f;
 
-		// values for D12
-		const float average_thrust = 11.5f;
-		const float max_accel_for_divert = 12.f;
+		// burn alt constraints
 
-		const float motor_burn_time = 2.4f;
-		const float max_target_burn_time = 2.5f;
-		const float min_target_burn_time = 2.4f;
-		const float ignition_delay_time = 0.1f;
+		const float max_burn_alt = 32.f;
+		const float min_burn_alt = 20.f;
 
-		// divert settings
-		const float max_burn_alt = 20.f;
-		const float target_landing_alt = 1.f;
-		const float min_throttle_percent = 0.8f;
-		const float max_throttle_for_divert = 0.98f;
+		// percent of drag force to include in GFIELD calculations
+		const float drag_compensation_coeff = 0.15f;
+		
+		// landing divert constraints
+
+		const float max_accel_for_divert = 16.f;
+		const float target_landing_alt = 0.5f;
+
+		const float divert_min_throttle = 0.8f;
+		const float divert_enable_throttle = 0.95f;
 
 		// point between upright (0) and retrograde (1) to point when slowing down while landing
 		const float divert_retrograde_coeff = 0.5f;
@@ -110,10 +130,15 @@ namespace control {
 		// commitment percentage from no divert (0) to full target divert angle (1)
 		const float throttle_divert_commitment_coeff = 1.f;
 
-		float burn_alt = 0;
+		// scalar to apply to y component of velocity direction to make sure the rocket doesnt hit me
+		const float y_vel_direction_scalar = 2.0f;
+
 		float energy = 0;
 		float energy_potential = 0;
 		float energy_kinetic = 0;
+		
+		float burn_alt = 0;
+		
 		float comp = 0;
 		float velocity_at_burn_alt = 0;
 		float burn_time = 0;
@@ -128,19 +153,17 @@ namespace control {
 		// angle to obtain desired force
 		float divert_angle = 0;
 
-		// angle of horizontal course over the ground
-		float lateral_velocity_ang = 0;
-
 		void update() {
 
 			// reset target orientation
 			target_orientation = vec3<float>(1.0, 0.0, 0.0);
 
-			// =========================================================
-			// update burn alt
+			// ===========================================================================
+			// GFIELD burn altitude calculation
 
-			float drag_est = 0.5*nav::acceleration_l.len();
+			float drag_est = drag_compensation_coeff*nav::acceleration_l.len();
 
+			// =========================
 			// energy calculation
 
 			// m*g*h
@@ -165,6 +188,9 @@ namespace control {
 				if ( burn_alt > max_burn_alt ) { burn_alt = max_burn_alt; flags::control_flags::burn_alt_over_safe_thresh = true; }
 				else { flags::control_flags::burn_alt_over_safe_thresh = false; }
 
+				if ( burn_alt < min_burn_alt ) { burn_alt = min_burn_alt; flags::control_flags::burn_alt_under_safe_thresh = true; }
+				else { flags::control_flags::burn_alt_under_safe_thresh = false; }
+
 				// velocity_at_burn_alt = -sqrtf(nav::velocity.x*nav::velocity.x + 2*nav::acceleration_l.len() * ( nav::position.x - burn_alt ));
 				
 				// if ( !isnanf(velocity_at_burn_alt) ) {
@@ -180,7 +206,7 @@ namespace control {
 
 			}
 
-			// =========================================================
+			// ===========================================================================
 			// update landing burn guidance (starts 0.4s after ignition)
 
 			if ( time_us_64() > (timing::get_t_landing_burn_start()+400000) ) {
@@ -196,18 +222,19 @@ namespace control {
 
 				// calculate and clamp throttle ratio
 				throttle_ratio = desired_accel/accel_current;
-				throttle_ratio = clamp(throttle_ratio, min_throttle_percent, 1.f);
-
+				throttle_ratio = clamp(throttle_ratio, divert_min_throttle, 1.f);
 				divert_angle = acosf(throttle_ratio);
-				lateral_velocity_ang = atan2(nav::velocity.y, nav::velocity.z);
+
+				// find lateral velocity angle and direction for diverting
+				float lateral_velocity_ang = atan2(nav::velocity.y * y_vel_direction_scalar, nav::velocity.z);
 				float lateral_velocity_magnitude = sqrtf(nav::velocity.y*nav::velocity.y + nav::velocity.z*nav::velocity.z);
 
-				// percent of thrust that is horizontal
+				// calculate horizontal component of thrust and desired horizontal acceleration
 				float horizontal_divert_component = sinf(divert_angle);
 				float horizontal_acceleration = accel_current*horizontal_divert_component;
 
 				// if target thrust is low enough AND there is enough time to slow down laterally, then increase lateral velocity
-				if ( throttle_ratio < max_throttle_for_divert && ((lateral_velocity_magnitude/horizontal_acceleration) < (time_to_impact-1)) ) {
+				if ( throttle_ratio < divert_enable_throttle && !flags::control_flags::divert_end ) {
 					
 					// cos(ang) = ratio because cos(ang) = cos(arccos(ratio))
 					target_orientation.x = throttle_ratio;
@@ -241,9 +268,7 @@ namespace control {
 		setpoint_position = vec3();
 		setpoint_velocity = vec3();
 		setpoint_orientation = vec3();
-
 		setpoint_tvc = vec3();
-		desired_torque = vec3();
 
 		thrust = 0;
 
@@ -267,19 +292,9 @@ namespace control {
 		if ( ((time_us_32()/1000) % 1000) > 750 && ((time_us_32()/1000) % 1000) < 850 ) { perif::servo_2_position -= 250; }
 		
 		*/
-
-		target_vector = vec3(1.0, 0.0, 0.0);
-
-		#ifdef SITL
-
-		if ( timing::get_MET() > 1000000 && timing::get_MET() < 3000000 ) {
-			target_vector.y = 0.05;
-		}
-
-		#endif
-		
-		// ================================================================
-		// live simulation
+	
+		// ===========================================================================
+		// in flight simulation
 
 		if ( get_vehicle_state() == state_powered_ascent || get_vehicle_state() == state_ascent_coast ) {
 
@@ -338,8 +353,6 @@ namespace control {
 
 			flags::control_flags::core1_communication_failure = !multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_LANDING_SIM_INPUT, 10);
 
-			gfield::update();
-
 		}
 
 		if ( get_vehicle_state() == state_landing_start || get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) {
@@ -368,62 +381,99 @@ namespace control {
 			
 			flags::control_flags::core1_communication_failure = !multicore_fifo_push_timeout_us(core1_interface::CORE0_NEW_DIVERT_SIM_INPUT, 10);
 
-			// update GFIELD and set target orientation
+		}
 
+		// ===========================================================================
+		// guidance
+
+		// reset target orientation
+		target_vector = vec3(1.0, 0.0, 0.0);
+
+		// pitch over on ascent
+		if ( timing::get_MET() > 1000000 && timing::get_MET() < 2500000 ) {
+			target_vector.y = 0.05;
+		}
+
+		// ===========================================================================
+		// GFIELD
+		
+		// update GFIELD for landing burn calculation
+		if ( get_vehicle_state() == state_descent_coast ) { gfield::update(); }
+
+		if ( get_vehicle_state() == state_landing_start || get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) {
 			gfield::update();
 			target_vector = gfield::target_orientation;
-
 		}
+
+		// ===========================================================================
+		// update TVC
 
 		if ( vehicle_has_control() ) {
 
-			// ================================================================
+			// ===========================================================================
 			// thrust estimation
-
-			// TODO:
-			// drag estimation ?
 
 			thrust = (nav::acceleration_l.len()*nav::mass);
 
-			// ================================================================
+			// ===========================================================================
 			// orientation control
+
+			// calculate vector guidance error values
 
 			vec3<float> error_vector = nav::rotation.conjugate().rotate_vec(target_vector.norm());
 			angle_error.y = atan2f(-error_vector.z, error_vector.x);
 			angle_error.z = atan2f(error_vector.y, error_vector.x);
 
+			// update angular acceleration error estimates
+			
 			ang_acc_error = nav::rotational_acceleration;
 			ang_acc_error.y -= pid_ori_y.output;
 			ang_acc_error.z -= pid_ori_z.output;
 
-			// pid_ori_y.update_with_target_derivative(angle_error.y, -nav::rotational_velocity.y, 3.f*angle_error.y, 0.01);
-			// pid_ori_z.update_with_target_derivative(angle_error.z, -nav::rotational_velocity.z, 3.f*angle_error.z, 0.01);
+			// control during ascent
+			if ( get_vehicle_state() == state_powered_ascent ) {
 
-			pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
-			pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
+				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*2.0f, 0.01);	
+				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*2.0f, 0.01);
 
-			ang_acc_out.y = pid_ori_y.output;
-			ang_acc_out.z = pid_ori_z.output;           
+			}
 
-			angle_out.y = 0.0;
-			angle_out.z = 0.0;
+			// before ignition, move the tvc mount to the angle needed when the motor comes up to thrust
+			if ( get_vehicle_state() == state_landing_start ) {
 
-			// cant divide by thrust if it's zero
-			if ( thrust > 0.1 ) {
+			}
 
-				// pid_ori_y.output -= (ang_acc_error.y*0.25);
-				// pid_ori_z.output -= (ang_acc_error.z*0.25);
+			// control during landing burn
+			if ( get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) {
 
-				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
-				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
+			}
+
+
+			// pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
+			// pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
+
+			// ang_acc_out.y = pid_ori_y.output;
+			// ang_acc_out.z = pid_ori_z.output;           
+
+			// angle_out.y = 0.0;
+			// angle_out.z = 0.0;
+
+			// // cant divide by thrust if it's zero
+			// if ( thrust > 0.1 ) {
+
+			// 	// pid_ori_y.output -= (ang_acc_error.y*0.25);
+			// 	// pid_ori_z.output -= (ang_acc_error.z*0.25);
+
+			// 	angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
+			// 	angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
 			
-			} else if ( get_vehicle_state() == state_landing_start ) {
+			// } else if ( get_vehicle_state() == state_landing_start ) {
 			
-				// calculate angle for the peak thrust of the landing burn
-				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x), -1.f, 1.f));
-				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x), -1.f, 1.f));
+			// 	// calculate angle for the peak thrust of the landing burn
+			// 	angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x), -1.f, 1.f));
+			// 	angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x), -1.f, 1.f));
 			
-			}    
+			// }    
 
 			angle_out.y *= 180.f/PI;
 			angle_out.z *= 180.f/PI;
@@ -432,6 +482,9 @@ namespace control {
 			perif::servo_2_position = uint16_t( perif::servo_2_offset + perif::servo_neutral + (angle_out.y * 37.5f) );
 		
 		} else {
+			thrust = 0.0f;
+			angle_out = vec3(0.0, 0.0, 0.0);
+			
 			perif::servo_1_position = perif::servo_neutral + perif::servo_1_offset;
 			perif::servo_2_position = perif::servo_neutral + perif::servo_2_offset;
 		}
