@@ -16,46 +16,11 @@
 
 #endif
 
-
-
 namespace nav {
 
-	const float altLUT[] = { 0.        , 0.41629385, 0.47499169, 0.5130931 , 0.54196597,
-	   0.56547576, 0.58543972, 0.6028679 , 0.61838369, 0.63240071,
-	   0.64520838, 0.65701764, 0.66798728, 0.67824003, 0.68787284,
-	   0.69696371, 0.70557638, 0.71376365, 0.72156982, 0.72903237,
-	   0.73618338, 0.7430505 , 0.74965775, 0.75602613, 0.76217412,
-	   0.76811807, 0.77387253, 0.77945047, 0.78486357, 0.79012234,
-	   0.79523626, 0.80021397, 0.80506332, 0.80979148, 0.81440501,
-	   0.81890995, 0.82331185, 0.82761583, 0.83182663, 0.83594864,
-	   0.83998594, 0.84394232, 0.84782133, 0.85162627, 0.85536021,
-	   0.85902606, 0.86262654, 0.86616419, 0.8696414 , 0.87306045,
-	   0.87642346, 0.87973244, 0.88298929, 0.88619582, 0.88935373,
-	   0.89246464, 0.89553009, 0.89855152, 0.90153034, 0.90446786,
-	   0.90736533, 0.91022397, 0.91304491, 0.91582924, 0.91857802,
-	   0.92129224, 0.92397285, 0.92662078, 0.9292369 , 0.93182205,
-	   0.93437704, 0.93690264, 0.93939961, 0.94186865, 0.94431045,
-	   0.94672568, 0.94911498, 0.95147895, 0.9538182 , 0.95613328,
-	   0.95842476, 0.96069316, 0.962939  , 0.96516277, 0.96736495,
-	   0.96954601, 0.97170638, 0.97384651, 0.97596682, 0.9780677 ,
-	   0.98014956, 0.98221277, 0.98425771, 0.98628472, 0.98829416,
-	   0.99028637, 0.99226167, 0.99422038, 0.99616281, 0.99808925,
-	   1.        , 1.00189534, 1.00377555, 1.00564089, 1.00749162,
-	   1.00932801, 1.01115028, 1.01295869, 1.01475346, 1.01653483,
-	   1.01830301 };
+	float mass = mass_ascent_start;
+	vec3<float> moment_of_inertia = moi_ascent;
 
-	float fast_pow(float P);
-
-	const float dry_mass = 0.7;
-	float mass = 0.7;
-	vec3<float> moment_of_inertia = vec3(0.01, 0.03587682209, 0.03587682209);
-
-	const float motor_mass_ascent_start = 0.118;
-	const float motor_mass_ascent_end   = 0.082;
-
-	const float motor_mass_descent_start = 0.059;
-	const float motor_mass_descent_end   = 0.033;
-	
 	const vec3<float> gravity(9.816, 0.0, 0.0);
 
 	quat<float> rotation;
@@ -202,15 +167,40 @@ namespace nav {
 
 	void update() {
 
-		// if ( timing::get_MET() && timing::get_MET() < 2600000 ) {
-		// 	float burn_percent = ((float)timing::get_MET())/2600000.f;
-		// 	mass = dry_mass + (motor_mass_ascent_start*(1.f-burn_percent)) + (motor_mass_ascent_end*(burn_percent));
-		// }
+		// mass tracking
 
-		// if ( timing::get_t_landing_burn_start() && (time_us_64()-timing::get_t_landing_burn_start()) < 2600000) {
-		// 	float burn_percent = ((float)(time_us_64()-timing::get_t_landing_burn_start()))/2600000.f;
-		// 	mass = dry_mass + (motor_mass_descent_start*(1.f-burn_percent)) + (motor_mass_descent_end*(burn_percent));
-		// }
+		if ( timing::get_MET() ) {
+
+			// powered ascent
+			if ( timing::get_MET() < 3400000 ) {
+
+				float percent_burn_remaining = (float)(3400000-timing::get_MET())/(float)(3400000);
+				mass = clamp((mass_ascent_start*percent_burn_remaining) + (mass_ascent_end*(1-percent_burn_remaining)), mass_ascent_end, mass_ascent_start);
+
+			} 
+			// ascent / descent coast
+			else if ( timing::get_MET() >= 3400000 && !timing::get_t_landing_burn_start() ) {
+
+				mass = mass_ascent_end;
+
+			} 
+			
+			// landing
+			else if ( timing::get_MET() > timing::get_t_landing_burn_start() && timing::get_t_landing_burn_start() ) {
+
+				float percent_burn_remaining = (float)((timing::get_t_landing_burn_start()+3400000)-timing::get_MET())/(float)(3400000);
+				mass = clamp((mass_descent_start*percent_burn_remaining) + (mass_descent_end*(1-percent_burn_remaining)), mass_descent_end, mass_descent_start);
+
+			} 
+			
+			// post-landing
+			else if ( timing::get_MET() > timing::get_t_landing_burn_start()+3400000 && timing::get_t_landing_burn_start() ) {
+
+				mass = mass_descent_end;
+
+			}
+			
+		}
 
 		#ifndef SITL
 
