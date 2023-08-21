@@ -159,8 +159,9 @@ namespace datalog {
 
 	uint8_t flash_errors = 0;
 
-	bool start_flash_export = false;
-
+	bool export_current_flight = false;
+	bool export_past_flights = false;
+	
 	uint16_t find_flash_start() {
 
 		#ifdef DATALOG_EN
@@ -367,10 +368,10 @@ namespace datalog {
 		return true;
 	}
 
-	void export_flash_data_blocking() {
+	void export_flash_data_blocking(int page_start, int page_end) {
 		#ifdef DATALOG_EN
 
-		for ( int i = 0; i < start_page; i++ ) {
+		for ( int i = page_start; i < page_end; i++ ) {
 			
 			flash_read_page(pin_cs_flash, i, (uint8_t*)&points);
 
@@ -549,108 +550,19 @@ namespace datalog {
 		#endif
 	}
 
-	void export_flash_data_async() {
-		#ifdef DATALOG_EN
-
-		// set read start page
-		// if ( export_page == 0 && start_page != 0 ) { export_page = start_page; }
-
-		// dont send the current datalog
-		if ( export_page >= start_page ) { return; }
-
-		uint8_t buf[256];
-
-		flash_read_page(pin_cs_flash, export_page++, buf);
-
-		// calculate checksum for sending flash data
-		uint8_t checksum_a = 0;
-		uint8_t checksum_b = 0;
-
-		// header
-		// radio::radio_tx_buf[radio::radio_tx_buf_position++] = '$';
-		printf("$");
-
-		for ( int i = 0; i < 256; i++ ) { 
-			// get value from most recent data log
-			uint8_t v = buf[i];
-
-			// send value to radio buffer
-			printf(" %x", v);
-			
-			// calculate checksum on value
-			checksum_a += v; 
-			checksum_b += checksum_a; 
-		}
-
-		printf("\n");
-
-		// old, prints data as a string
-
-		// radio::radio_tx_buf_position = sprintf((radio::radio_tx_buf+radio::radio_tx_buf_position), "%i,%llu,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%i,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%i,%i,%i,%i,%i,%i,%f,%f,%f,%i,%i,%i,%f,%f,%f,%f,%f,%f,%f\n",
-		//     points.state,
-		//     points.time,
-		//     (points.flag_gpio&1),
-		//     (points.flag_gpio&0b10)>>1,
-		//     (points.flag_gpio&0b100)>>2,
-		//     (points.flag_gpio&0b1000)>>3,
-		//     (points.flag_gpio&0b10000)>>4,
-		//     (points.flag_gpio&0b100000)>>5,
-		//     (points.flag_gpio&0b1000000)>>6,
-		//     (points.flag_gpio&0b10000000)>>7,
-		//     (points.flag_state&1),
-		//     (points.flag_state&0b10)>>1,
-		//     (points.flag_state&0b100)>>2,
-		//     (points.flag_state&0b1000)>>3,
-		//     (points.flag_state&0b10000)>>4,
-		//     (points.flag_state&0b100000)>>5,
-		//     (points.flag_state&0b1000000)>>6,
-		//     (points.flag_state&0b10000000)>>7,
-		//     points.active_state_timer,
-		//     points.voltage_batt,
-		//     points.voltage_pyro,
-		//     points.position.x,
-		//     points.position.y,
-		//     points.position.z,
-		//     points.velocity.x,
-		//     points.velocity.y,
-		//     points.velocity.z,
-		//     points.accel_bias.x,
-		//     points.accel_bias.y,
-		//     points.accel_bias.z,
-		//     points.rotation.w,
-		//     points.rotation.x,
-		//     points.rotation.y,
-		//     points.rotation.z,
-		//     points.acceleration.x,
-		//     points.acceleration.y,
-		//     points.acceleration.z,
-		//     points.ori_rate.x,
-		//     points.ori_rate.y,
-		//     points.ori_rate.z,
-		//     points.baro_alt,
-		//     points.baro_pressure,
-		//     points.baro_temp,
-		//     points.mag.x,
-		//     points.mag.y,
-		//     points.mag.z,
-		//     points.burn_alt,
-		//     points.comp,
-		//     points.simulation_energy_est,
-		//     points.simulation_work_est,
-		//     points.simulation_position_est,
-		//     points.simulation_velocity_est,
-		//     points.simulation_time_est);
-		
-		#endif
-	}
-
 	void update() {
 		#ifdef DATALOG_EN
 
-		if ( start_flash_export && !vehicle_is_in_flight() ) {
+		if ( export_current_flight && !vehicle_is_in_flight() ) {
 			// export_flash_data_async();
-			export_flash_data_blocking();
-			start_flash_export = false;
+			export_flash_data_blocking(start_page, page);
+			export_current_flight = false;
+		}
+
+		if ( export_past_flights && !vehicle_is_in_flight() ) {
+			// export_flash_data_async();
+			export_flash_data_blocking(0, start_page);
+			export_past_flights = false;
 		}
 
 		switch(get_vehicle_state()) {
