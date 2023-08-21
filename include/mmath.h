@@ -10,6 +10,7 @@ public:
 	typedef T mem_t;
 	// array<array<mem_t, cols>, rows> mem;
 	mem_t mem[rows*cols];
+	size_t memsize = rows*cols;
 
 	const static int Rows = rows;
 	const static int Cols = cols;
@@ -18,8 +19,8 @@ public:
 	matrix() = default;
 
 	// element access and assignment
-	mem_t  operator()(int row, int col = 0) const { return(mem[row * Cols + col]); }
-	mem_t &operator()(int row, int col = 0)       { return(mem[row * Cols + col]); }
+	mem_t  operator()(int row, int col = 0) const { return(mem[(row * Cols + col)%memsize]); }
+	mem_t &operator()(int row, int col = 0)       { return(mem[(row * Cols + col)%memsize]); }
 
 	bool swap_row(int src, int dest) {
 		if ( src < 0 || dest < 0 || src > Rows || dest > Rows ) { return false; } 
