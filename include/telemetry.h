@@ -44,7 +44,7 @@ namespace telemetry {
 					datalog::export_current_flight = true;
 				}
 				#else
-				datalog::start_flash_export = true;
+				datalog::export_current_flight = true;
 				#endif
 				break;
 			}
@@ -54,7 +54,7 @@ namespace telemetry {
 					datalog::export_past_flights = true;
 				}
 				#else
-				datalog::start_flash_export = true;
+				datalog::export_past_flights = true;
 				#endif
 				break;
 			}
@@ -78,7 +78,7 @@ namespace telemetry {
 
 			// if ( datalog::export_current_flight || datalog::export_past_flights ) { return; }
 
-			#if false
+			#if true
 
 			#ifdef USE_RADIO
 				radio::radio_tx_buf_position = sprintf((radio::radio_tx_buf+radio::radio_tx_buf_position), "%llu,%i,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%i,%f,%f,%f,%i\n",
