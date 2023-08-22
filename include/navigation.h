@@ -62,6 +62,8 @@ namespace nav {
 
 	float pad_altitude;
 
+	float max_measured_landing_acc = 0.0;
+
 	namespace nav_timing {
 	
 		uint64_t last_nav_update_us = 0;
@@ -169,6 +171,8 @@ namespace nav {
 
 		// mass tracking
 
+		vec3<float> accel_prev = acceleration_l;
+
 		if ( timing::get_MET() ) {
 
 			// powered ascent
@@ -199,7 +203,7 @@ namespace nav {
 				mass = mass_descent_end;
 
 			}
-			
+
 		}
 
 		#ifndef SITL
@@ -462,20 +466,16 @@ namespace nav {
 		
 		float current_motor_thrust = 0;
 
-		if ( timing::get_MET() && timing::get_MET() < 2600000) {
+		if ( timing::get_MET() && timing::get_MET() < 3560000) {
 			int idx = timing::get_MET()/10000;
-			if ( idx > 259 ) { idx = 259; }
-			current_motor_thrust += simulation::e12_thrust[idx];
+			if ( idx > 356 ) { idx = 356; }
+			current_motor_thrust += simulation::f15_thrust[idx];
 		}
 
-		// if ( flags::control_flags::start_landing_burn && timing::get_t_landing_burn_start() == 0 ) {
-		// 	timing::set_t_landing_burn_start(time_us_64());
-		// }
-
-		if ( timing::get_t_landing_burn_start() && (time_us_64()-timing::get_t_landing_burn_start()) < 2600000) {
+		if ( timing::get_t_landing_burn_start() && (time_us_64()-timing::get_t_landing_burn_start()) < 3560000) {
 			int idx = (time_us_64()-timing::get_t_landing_burn_start())/10000;
-			if ( idx > 259 ) { idx = 259; }
-			current_motor_thrust += simulation::e12_thrust[idx];
+			if ( idx > 356 ) { idx = 356; }
+			current_motor_thrust += simulation::f15_thrust[idx];
 		}
 		
 		vec3<float> tvc_angle = vec3<float>(0.0, perif::servo_2_position + ((time_us_32()&0xf0)>>4) - 8, perif::servo_1_position + (time_us_32()&0xf) - 8);
@@ -484,7 +484,7 @@ namespace nav {
 		tvc_angle /= 37.5f;
 
 		vec3<float> motor_forces = quat<float>().from_eulers(0.0, tvc_angle.z*PI/180.f, tvc_angle.y*PI/180.f).rotate_vec(vec3<float>(current_motor_thrust, 0.0, 0.0));
-		vec3<float> motor_torques = vec3<float>(-0.26, 0.0, 0.0).cross(motor_forces);
+		vec3<float> motor_torques = vec3<float>(-0.2, 0.0, 0.0).cross(motor_forces);
 		rotational_acceleration = motor_torques/nav::moment_of_inertia;
 		
 		acceleration_i = vec3<float>(0.0, 0.0, 0.0);
@@ -545,12 +545,22 @@ namespace nav {
 
 		// update all flags
 
+		if ( get_vehicle_state() == state_landing_start ) {
+
+			float acc_cur = acceleration_l.len();
+			if ( acc_cur > max_measured_landing_acc ) { max_measured_landing_acc = acc_cur; }
+			if ( max_measured_landing_acc > 20.f ) { flags::state_flags::accel_over_peak_landing_thresh = true; }
+
+			flags::state_flags::accel_decreasing = ( acc_cur < accel_prev.len() );
+
+		}
+
 		flags::state_flags::accel_over_ld_threshold = (get_vehicle_state() == state_launch_detect) & ( acceleration_l.x > launch_detect_accel_threshold );
 		flags::state_flags::accel_under_burnout_threshold = (get_vehicle_state() == state_powered_ascent) & ( acceleration_l.x < burnout_detect_accel_threshold );
 		flags::state_flags::accel_over_landing_threshold = (get_vehicle_state() == state_landing_start) & ( acceleration_l.x > landing_burn_detect_accel_threshold );
 
 		float deviation_from_g = (acceleration_l.len());
-		flags::state_flags::accel_within_landed_threshold = 	( deviation_from_g < 9.816+landing_detect_accel_threshold ) & ( deviation_from_g > 9.816-landing_detect_accel_threshold );
+		flags::state_flags::accel_within_landed_threshold = ( deviation_from_g < 9.816+landing_detect_accel_threshold ) & ( deviation_from_g > 9.816-landing_detect_accel_threshold );
 
 		flags::state_flags::velocity_over_apogee_threshold = ( get_vehicle_state() == state_ascent_coast ) & ( velocity.x < apogee_detect_vel_threshold );
 

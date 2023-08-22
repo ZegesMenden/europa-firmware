@@ -31,13 +31,13 @@
 // #define USE_GPS
 
 // simulate flight (SITL)
-// #define SITL
+#define SITL
 
 // enable / disable buzzer
 // #define USE_BUZZER
 
 // enable / disable hardware control of landing burn (motor ignition, state control logic)
-// #define LANDING_HW_EN
+#define LANDING_HW_EN
 
 // ===========================================================================
 // thresholds for state switches
@@ -172,6 +172,9 @@ namespace flags {
 
 		volatile bool baro_below_alt_threshold = false;
 		volatile bool velocity_below_landed_threshold = false;
+
+		volatile bool accel_decreasing = false;
+		volatile bool accel_over_peak_landing_thresh = false;
 
 		uint8_t sts_bitmap = 0;
 

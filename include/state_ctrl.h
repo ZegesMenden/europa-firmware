@@ -135,12 +135,14 @@ namespace state {
 
 				#ifdef LANDING_HW_EN
 
-				if ( flags::state_flags::accel_over_landing_threshold ) { accel_landing_burn_timer++; }
+				if ( flags::state_flags::accel_decreasing && flags::state_flags::accel_over_peak_landing_thresh ) { accel_landing_burn_timer++; }
 				else { accel_landing_burn_timer = 0; }
 
-				if ( accel_landing_burn_timer > 5 ) {
+				if ( accel_landing_burn_timer > 2 ) {
 					set_vehicle_state(state_landing_guidance);
-					timing::set_t_landing_burn_start(time_us_64());
+
+					// subtract (419000+3000) because landing is detected after burn peak, which is 0.419s after ignition
+					timing::set_t_landing_burn_start(time_us_64() - (419000+30000));
 				}
 
 				current_state_timer = accel_landing_burn_timer;

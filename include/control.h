@@ -433,47 +433,81 @@ namespace control {
 			// control during ascent
 			if ( get_vehicle_state() == state_powered_ascent ) {
 
-				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*2.0f, 0.01);	
-				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*2.0f, 0.01);
+				// update coefficients for ascent
+				pid_ori_y.set_kp(kp_ascent);
+				pid_ori_y.set_ki(ki_ascent);
+				pid_ori_y.set_kd(kd_ascent);
+				
+				pid_ori_z.set_kp(kp_ascent);
+				pid_ori_z.set_ki(ki_ascent);
+				pid_ori_z.set_kd(kd_ascent);
+
+				tvc_lever = tvc_lever_ascent;
+
+				// calculate angular acceleration output
+				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*target_d_coeff_ascent, 0.01);
+				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*target_d_coeff_ascent, 0.01);
+
+				// calculate angle from tvc lever and thrust
+				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(thrust * tvc_lever.x), -1.f, 1.f));
+				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(thrust * tvc_lever.x), -1.f, 1.f));
 
 			}
 
 			// before ignition, move the tvc mount to the angle needed when the motor comes up to thrust
 			if ( get_vehicle_state() == state_landing_start ) {
 
+				// update coefficients for landing
+				pid_ori_y.set_kp(kp_descent);
+				pid_ori_y.set_ki(ki_descent);
+				pid_ori_y.set_kd(kd_descent);
+				
+				pid_ori_z.set_kp(kp_descent);
+				pid_ori_z.set_ki(ki_descent);
+				pid_ori_z.set_kd(kd_descent);
+
+				tvc_lever = tvc_lever_descent;
+
+				// calculate angular acceleration output
+				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*target_d_coeff_descent, 0.01);
+				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*target_d_coeff_descent, 0.01);
+
+				// calculate angle for the peak thrust of the landing burn
+				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(25.f * tvc_lever.x), -1.f, 1.f));
+				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(25.f * tvc_lever.x), -1.f, 1.f));
+
 			}
 
 			// control during landing burn
 			if ( get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) {
 
+				// update coefficients for landing
+				pid_ori_y.set_kp(kp_descent);
+				pid_ori_y.set_ki(ki_descent);
+				pid_ori_y.set_kd(kd_descent);
+				
+				pid_ori_z.set_kp(kp_descent);
+				pid_ori_z.set_ki(ki_descent);
+				pid_ori_z.set_kd(kd_descent);
+
+				tvc_lever = tvc_lever_descent;
+
+				// calculate angular acceleration output
+				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*target_d_coeff_descent, 0.01);
+				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*target_d_coeff_descent, 0.01);
+
+				// kill angular rates for final 0.2s of burn
+				if ( timing::get_MET() > timing::get_t_landing_burn_start() + 3200000 ) {
+					// calculate angular acceleration output
+					pid_ori_y.update_with_target_derivative(0.0, nav::rotational_velocity.y, 0.0, 0.01);
+					pid_ori_z.update_with_target_derivative(0.0, nav::rotational_velocity.z, 0.0, 0.01);
+				}
+
+				// calculate angle from tvc lever and thrust
+				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(thrust * tvc_lever.x), -1.f, 1.f));
+				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(thrust * tvc_lever.x), -1.f, 1.f));
+
 			}
-
-
-			// pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
-			// pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
-
-			// ang_acc_out.y = pid_ori_y.output;
-			// ang_acc_out.z = pid_ori_z.output;           
-
-			// angle_out.y = 0.0;
-			// angle_out.z = 0.0;
-
-			// // cant divide by thrust if it's zero
-			// if ( thrust > 0.1 ) {
-
-			// 	// pid_ori_y.output -= (ang_acc_error.y*0.25);
-			// 	// pid_ori_z.output -= (ang_acc_error.z*0.25);
-
-			// 	angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
-			// 	angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(control::thrust * control::tvc_lever.x), -1.f, 1.f));
-			
-			// } else if ( get_vehicle_state() == state_landing_start ) {
-			
-			// 	// calculate angle for the peak thrust of the landing burn
-			// 	angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(11.f * control::tvc_lever.x), -1.f, 1.f));
-			// 	angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(11.f * control::tvc_lever.x), -1.f, 1.f));
-			
-			// }    
 
 			angle_out.y *= 180.f/PI;
 			angle_out.z *= 180.f/PI;
