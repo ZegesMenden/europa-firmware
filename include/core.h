@@ -22,7 +22,7 @@
 #define TELEMETRY_EN
 
 // use radio instead of usb serial
-// #define USE_RADIO
+#define USE_RADIO
 
 // log data to internal flash
 // #define USE_INTERNAL_FLASH
@@ -31,10 +31,13 @@
 // #define USE_GPS
 
 // simulate flight (SITL)
-#define SITL
+// #define SITL
 
 // enable / disable buzzer
 // #define USE_BUZZER
+
+// enable / disable accelerometer debiasing on the launch pad
+#define ACCEL_DEBIAS_ON_PAD
 
 // enable / disable hardware control of landing burn (motor ignition, state control logic)
 #define LANDING_HW_EN
@@ -135,8 +138,8 @@ const static float leg_deployment_time = 1.5;
 // ===========================================================================
 // pyro settings
 
-uint32_t pyro_1_fire_dur_us = 500000;
-uint32_t pyro_2_fire_dur_us = 500000;
+uint32_t pyro_1_fire_dur_us = 750000;
+uint32_t pyro_2_fire_dur_us = 2500000;
 uint32_t pyro_3_fire_dur_us = 0;
 
 const static bool pyro_1_en = true;
@@ -198,6 +201,7 @@ namespace flags {
 	namespace nav_flags {
 		
 		volatile bool gyro_debiased = false;
+		volatile bool accel_debiased = false;
 		volatile bool baro_debiased = false;
 
 		volatile bool gps_lock = false;
@@ -226,6 +230,8 @@ namespace flags {
 
 	namespace control_flags {
 
+		volatile bool vehicle_within_burn_alt_lockouts = false;
+
 		volatile bool start_landing_burn = false;
 		volatile bool divert_end = false;
 
@@ -238,10 +244,15 @@ namespace flags {
 
 		volatile bool core1_communication_failure = false;
 
+		volatile bool landing_burn_peak = false;
+
 		// b0: start_landing_burn
 		// b1: burn_alt_over_safe_thresh
 		// b2: core1_communication_failure
-
+		// b3: burn_alt_under_safe_thresh
+		// b4: vehicle_within_burn_alt_lockouts
+		// b5: divert_end
+ 
 		uint8_t control_bitmap = 0;
 
 	}
@@ -289,7 +300,11 @@ namespace flags {
 
 		control_flags::control_bitmap = (control_flags::start_landing_burn) |
 										(control_flags::burn_alt_over_safe_thresh<<1) |
-										(control_flags::core1_communication_failure<<2);
+										(control_flags::core1_communication_failure<<2) |
+										(control_flags::burn_alt_under_safe_thresh<<3) |
+										(control_flags::vehicle_within_burn_alt_lockouts<<4) |
+										(control_flags::divert_end<<5) |
+										(control_flags::landing_burn_peak<<6);
 
 		perif_flags::pyro_sts = (perif_flags::pyro_has_power<<1) |
 								(perif_flags::pyro_1_fire<<2) |

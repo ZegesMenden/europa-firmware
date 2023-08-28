@@ -143,6 +143,8 @@ namespace state {
 
 					// subtract (419000+3000) because landing is detected after burn peak, which is 0.419s after ignition
 					timing::set_t_landing_burn_start(time_us_64() - (419000+30000));
+
+					flags::control_flags::landing_burn_peak = true;
 				}
 
 				current_state_timer = accel_landing_burn_timer;

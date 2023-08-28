@@ -63,8 +63,8 @@ namespace perif {
 	uint16_t servo_7_position = servo_neutral;
 	uint16_t servo_8_position = servo_neutral;
 
-	int16_t servo_1_offset = -50;
-	int16_t servo_2_offset = 10;
+	int16_t servo_1_offset = 50;
+	int16_t servo_2_offset = 50;
 	int16_t servo_3_offset = 0;
 	int16_t servo_4_offset = 0;
 	int16_t servo_5_offset = 0;
@@ -72,11 +72,11 @@ namespace perif {
 	int16_t servo_7_offset = 0;
 	int16_t servo_8_offset = 0;
 
-	uint16_t servo_1_min = 1250;
-	uint16_t servo_1_max = 1650;
+	uint16_t servo_1_min = 1175;
+	uint16_t servo_1_max = 1925;
 
-	uint16_t servo_2_min = 1225;
-	uint16_t servo_2_max = 1760;
+	uint16_t servo_2_min = 1202;
+	uint16_t servo_2_max = 1898;
 
 	uint16_t servo_3_min = 1500;
 	uint16_t servo_3_max = 1500;
@@ -126,15 +126,15 @@ namespace perif {
 	
 	bool pyro_1_fire_condition() {
 		
-		if ( ( get_vehicle_state() == state_descent_coast || get_vehicle_state() == state_landing_start || get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) ) {
-			return 1;
-		}
+		if ( flags::control_flags::start_landing_burn ) { return 1; }
 
 		return 0;
 	}
 
 	bool pyro_2_fire_condition() {
 		
+		if ( flags::control_flags::start_landing_burn && time_us_64() > (pyro_1_fire_start + 600000) ) { return 1; }
+
 		return 0;
 	}
 
@@ -373,6 +373,16 @@ namespace perif {
 
 		if ( pyro_3_en && pyro_3_fire && time_us_64() < pyro_3_fire_start+pyro_3_fire_dur_us ) { gpio_put(pin_pyro_3_fire, 1); firing_pyro_3 = true; }
 		else { gpio_put(pin_pyro_3_fire, 0); firing_pyro_3 = false; }
+
+		if ( pyro_2_en ) {
+
+			if ( pyro_2_fire_condition() && !pyro_2_fire ) {
+				pyro_2_fire = true;
+				pyro_2_fire_start = time_us_64();
+				gpio_put(pin_pyro_2_fire, 1);
+			}
+
+		}
 
 		if ( vehicle_is_in_flight() ) {
 

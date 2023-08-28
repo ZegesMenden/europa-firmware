@@ -81,15 +81,23 @@ namespace control {
 	// ===========================================================================
 	// control coefficients
 
-	const float kp_ascent = 12.f;
+	const float kp_ascent = 4.f;
 	const float ki_ascent = 0.f;
-	const float kd_ascent = 8.f;
-	const float target_d_coeff_ascent = 2.f;
+	const float kd_ascent = 1.f;
+	const float target_d_coeff_ascent = 0.f;
 	
 	const float kp_descent = 12.f;
 	const float ki_descent = 0.f;
-	const float kd_descent = 8.f;
-	const float target_d_coeff_descent = 7.f;
+	const float kd_descent = 3.f;
+	const float target_d_coeff_descent = 0.f;
+
+	const float linkage_ratio_y = 3.3792;
+	const float linkage_ratio_z = 3.1332;
+
+	const float steps_per_degree = 5.555f;
+
+	const float linkage_multiplier_y = linkage_ratio_y*2.f*steps_per_degree;
+	const float linkage_multiplier_z = linkage_ratio_z*2.f*steps_per_degree;
 	
 	// ===========================================================================
 	// control variables
@@ -114,11 +122,10 @@ namespace control {
 		const float min_burn_alt = 20.f;
 
 		// percent of drag force to include in GFIELD calculations
-		const float drag_compensation_coeff = 0.15f;
+		const float drag_compensation_coeff = 0.1f;
 		
 		// landing divert constraints
 
-		const float max_accel_for_divert = 16.f;
 		const float target_landing_alt = 0.5f;
 
 		const float divert_min_throttle = 0.8f;
@@ -126,6 +133,9 @@ namespace control {
 
 		// point between upright (0) and retrograde (1) to point when slowing down while landing
 		const float divert_retrograde_coeff = 0.5f;
+
+		// maximum horizontal component for retrograde burning
+		const float divert_retrograde_max = 0.25f;
 
 		// commitment percentage from no divert (0) to full target divert angle (1)
 		const float throttle_divert_commitment_coeff = 1.f;
@@ -153,7 +163,7 @@ namespace control {
 		// angle to obtain desired force
 		float divert_angle = 0;
 
-		void update() {
+		void update_landing_burn() {
 
 			// reset target orientation
 			target_orientation = vec3<float>(1.0, 0.0, 0.0);
@@ -206,6 +216,13 @@ namespace control {
 
 			}
 
+		}
+
+		void update_landing_guidance() {
+
+			// reset target orientation
+			target_orientation = vec3<float>(1.0, 0.0, 0.0);
+
 			// ===========================================================================
 			// update landing burn guidance (starts 0.4s after ignition)
 
@@ -215,10 +232,10 @@ namespace control {
 
 				// desired accel = -2(pos-1)/t^2 - 2(vel/t)
 				desired_accel = -2.f*(nav::position.x-target_landing_alt)/(time_to_impact*time_to_impact) - 2*nav::velocity.x/time_to_impact;
+				desired_accel = clamp(desired_accel, 0.f, 20.f) + 9.816f;
 
 				// clamp current accel as to avoid excessive diverting during thrust spike
-				float accel_current = nav::acceleration_l.len() - 9.816;
-				accel_current = clamp(accel_current, 0.1f, max_accel_for_divert);
+				float accel_current = average_thrust / nav::mass;
 
 				// calculate and clamp throttle ratio
 				throttle_ratio = desired_accel/accel_current;
@@ -242,8 +259,24 @@ namespace control {
 					// move into the current velocity (increase)
 					target_orientation.y = horizontal_divert_component*sinf(lateral_velocity_ang)*throttle_divert_commitment_coeff;
 					target_orientation.z = horizontal_divert_component*cosf(lateral_velocity_ang)*throttle_divert_commitment_coeff;
+
+					target_orientation.y = clamp(target_orientation.y, -0.5f, 0.5f);
+					target_orientation.z = clamp(target_orientation.z, -0.5f, 0.5f);
+
+					if ( time_to_impact < (abs(divert_angle*2) + (lateral_velocity_magnitude/horizontal_acceleration)) ) { flags::control_flags::divert_end = true; }
 				
-				} else {
+				} 
+				else if ( time_to_impact > 1 && throttle_ratio < divert_enable_throttle ) {
+
+					// cos(ang) = ratio because cos(ang) = cos(arccos(ratio))
+					target_orientation.x = throttle_ratio;
+
+					// move into the current velocity (increase)
+					target_orientation.y = -horizontal_divert_component*sinf(lateral_velocity_ang)*throttle_divert_commitment_coeff;
+					target_orientation.z = -horizontal_divert_component*cosf(lateral_velocity_ang)*throttle_divert_commitment_coeff;
+
+				}
+				else {
 					// otherwise, point retrograde and slow down
 
 					target_orientation = -nav::velocity;
@@ -251,12 +284,35 @@ namespace control {
 					// ensure that the rocket always points up
 					target_orientation.x = abs(target_orientation.x);
 
+					target_orientation /= target_orientation.x;
+
 					// dont necessarily point fully retrograde
 					target_orientation.y *= divert_retrograde_coeff;
 					target_orientation.z *= divert_retrograde_coeff;
 
+					target_orientation.y = clamp(target_orientation.y, -divert_retrograde_max, divert_retrograde_max);
+					target_orientation.z = clamp(target_orientation.z, -divert_retrograde_max, divert_retrograde_max);
+
 				}
 			
+			}
+			else {
+				// otherwise, point retrograde and slow down
+
+				target_orientation = -nav::velocity;
+
+				// ensure that the rocket always points up
+				target_orientation.x = abs(target_orientation.x);
+
+				target_orientation /= target_orientation.x;
+
+				// dont necessarily point fully retrograde
+				target_orientation.y *= divert_retrograde_coeff;
+				target_orientation.z *= divert_retrograde_coeff;
+
+				target_orientation.y = clamp(target_orientation.y, -divert_retrograde_max, divert_retrograde_max);
+				target_orientation.z = clamp(target_orientation.z, -divert_retrograde_max, divert_retrograde_max);
+
 			}
 
 		}
@@ -390,18 +446,18 @@ namespace control {
 		target_vector = vec3(1.0, 0.0, 0.0);
 
 		// pitch over on ascent
-		if ( timing::get_MET() > 1000000 && timing::get_MET() < 2500000 ) {
-			target_vector.y = 0.05;
-		}
+		// if ( timing::get_MET() > 1000000 && timing::get_MET() < 2500000 ) {
+		// 	target_vector.y = 0.05;
+		// }
 
 		// ===========================================================================
 		// GFIELD
 		
 		// update GFIELD for landing burn calculation
-		if ( get_vehicle_state() == state_descent_coast ) { gfield::update(); }
+		if ( get_vehicle_state() == state_descent_coast ) { gfield::update_landing_burn(); }
 
 		if ( get_vehicle_state() == state_landing_start || get_vehicle_state() == state_landing_guidance || get_vehicle_state() == state_landing_terminal ) {
-			gfield::update();
+			gfield::update_landing_guidance();
 			target_vector = gfield::target_orientation;
 		}
 
@@ -422,7 +478,7 @@ namespace control {
 
 			vec3<float> error_vector = nav::rotation.conjugate().rotate_vec(target_vector.norm());
 			angle_error.y = atan2f(-error_vector.z, error_vector.x);
-			angle_error.z = atan2f(error_vector.y, error_vector.x);
+			angle_error.z = atan2f( error_vector.y, error_vector.x);
 
 			// update angular acceleration error estimates
 			
@@ -431,7 +487,7 @@ namespace control {
 			ang_acc_error.z -= pid_ori_z.output;
 
 			// control during ascent
-			if ( get_vehicle_state() == state_powered_ascent ) {
+			if ( get_vehicle_state() == state_powered_ascent && timing::get_MET() < 3000000 ) {
 
 				// update coefficients for ascent
 				pid_ori_y.set_kp(kp_ascent);
@@ -445,8 +501,32 @@ namespace control {
 				tvc_lever = tvc_lever_ascent;
 
 				// calculate angular acceleration output
-				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*target_d_coeff_ascent, 0.01);
-				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*target_d_coeff_ascent, 0.01);
+				pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
+				pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
+
+				// calculate angle from tvc lever and thrust
+				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(thrust * tvc_lever.x), -1.f, 1.f));
+				angle_out.z = asinf(clamp((pid_ori_z.output * nav::moment_of_inertia.z)/(thrust * tvc_lever.x), -1.f, 1.f));
+
+			}
+
+			// control during ascent
+			if ( get_vehicle_state() == state_powered_ascent && timing::get_MET() > 3000000 ) {
+
+				// update coefficients for ascent
+				pid_ori_y.set_kp(0.0);
+				pid_ori_y.set_ki(0.0);
+				pid_ori_y.set_kd(kd_ascent);
+				
+				pid_ori_z.set_kp(0.0);
+				pid_ori_z.set_ki(0.0);
+				pid_ori_z.set_kd(kd_ascent);
+
+				tvc_lever = tvc_lever_ascent;
+
+				// calculate angular acceleration output
+				pid_ori_y.update_with_derivative(0.0, -nav::rotational_velocity.y, 0.01);
+				pid_ori_z.update_with_derivative(0.0, -nav::rotational_velocity.z, 0.01);
 
 				// calculate angle from tvc lever and thrust
 				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(thrust * tvc_lever.x), -1.f, 1.f));
@@ -469,8 +549,8 @@ namespace control {
 				tvc_lever = tvc_lever_descent;
 
 				// calculate angular acceleration output
-				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*target_d_coeff_descent, 0.01);
-				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*target_d_coeff_descent, 0.01);
+				pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
+				pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
 
 				// calculate angle for the peak thrust of the landing burn
 				angle_out.y = asinf(clamp((pid_ori_y.output * nav::moment_of_inertia.y)/(25.f * tvc_lever.x), -1.f, 1.f));
@@ -493,14 +573,14 @@ namespace control {
 				tvc_lever = tvc_lever_descent;
 
 				// calculate angular acceleration output
-				pid_ori_y.update_with_target_derivative(angle_error.y, nav::rotational_velocity.y, angle_error.y*target_d_coeff_descent, 0.01);
-				pid_ori_z.update_with_target_derivative(angle_error.z, nav::rotational_velocity.z, angle_error.z*target_d_coeff_descent, 0.01);
+				pid_ori_y.update_with_derivative(angle_error.y, -nav::rotational_velocity.y, 0.01);
+				pid_ori_z.update_with_derivative(angle_error.z, -nav::rotational_velocity.z, 0.01);
 
 				// kill angular rates for final 0.2s of burn
 				if ( timing::get_MET() > timing::get_t_landing_burn_start() + 3200000 ) {
 					// calculate angular acceleration output
-					pid_ori_y.update_with_target_derivative(0.0, nav::rotational_velocity.y, 0.0, 0.01);
-					pid_ori_z.update_with_target_derivative(0.0, nav::rotational_velocity.z, 0.0, 0.01);
+					pid_ori_y.update_with_derivative(0.0, -nav::rotational_velocity.y, 0.01);
+					pid_ori_z.update_with_derivative(0.0, -nav::rotational_velocity.z, 0.01);
 				}
 
 				// calculate angle from tvc lever and thrust
@@ -512,15 +592,37 @@ namespace control {
 			angle_out.y *= 180.f/PI;
 			angle_out.z *= 180.f/PI;
 			
-			perif::servo_1_position = uint16_t( perif::servo_1_offset + perif::servo_neutral + (angle_out.z * 37.5f) );
-			perif::servo_2_position = uint16_t( perif::servo_2_offset + perif::servo_neutral + (angle_out.y * 37.5f) );
-		
+			#ifndef SITL
+				
+			perif::servo_1_position = perif::servo_1_offset + perif::servo_neutral - (angle_out.z * linkage_multiplier_z);
+			perif::servo_2_position = perif::servo_2_offset + perif::servo_neutral - (angle_out.y * linkage_multiplier_y);
+			
+			#else
+			
+			float change_1 = ((float)perif::servo_1_offset + (float)perif::servo_neutral + (angle_out.z * linkage_multiplier_z)) - (float)(perif::servo_1_position);
+			float change_2 = ((float)perif::servo_2_offset + (float)perif::servo_neutral + (angle_out.y * linkage_multiplier_y)) - (float)(perif::servo_2_position);
+
+			change_1 = clamp((int)change_1, -160, 160);
+			change_2 = clamp((int)change_2, -160, 160);
+
+			perif::servo_1_position += change_1;
+			perif::servo_2_position += change_2;
+			
+			perif::servo_1_position = clamp(perif::servo_1_position, perif::servo_1_min, perif::servo_1_max);
+			perif::servo_2_position = clamp(perif::servo_2_position, perif::servo_2_min, perif::servo_2_max);
+
+			#endif
+
 		} else {
 			thrust = 0.0f;
 			angle_out = vec3(0.0, 0.0, 0.0);
 			
-			perif::servo_1_position = perif::servo_neutral + perif::servo_1_offset;
-			perif::servo_2_position = perif::servo_neutral + perif::servo_2_offset;
+			// slowly approach neutral instead of instantly moving there to reduce whiplash 
+			perif::servo_1_position = (((perif::servo_1_position)*49)/50) + ((perif::servo_neutral + perif::servo_1_offset)/50);
+			perif::servo_2_position = (((perif::servo_2_position)*49)/50) + ((perif::servo_neutral + perif::servo_2_offset)/50);
+
+			// perif::servo_1_position = perif::servo_neutral + perif::servo_1_offset;
+			// perif::servo_2_position = perif::servo_neutral + perif::servo_2_offset;
 		}
 
 	}

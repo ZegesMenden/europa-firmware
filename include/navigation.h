@@ -69,6 +69,7 @@ namespace nav {
 		uint64_t last_nav_update_us = 0;
 		
 		uint16_t gyro_bias_count = 0;
+		uint16_t accel_bias_count = 0;
 		uint16_t baro_bias_count = 0;
 		
 	}
@@ -182,23 +183,24 @@ namespace nav {
 				mass = clamp((mass_ascent_start*percent_burn_remaining) + (mass_ascent_end*(1-percent_burn_remaining)), mass_ascent_end, mass_ascent_start);
 
 			} 
-			// ascent / descent coast
-			else if ( timing::get_MET() >= 3400000 && !timing::get_t_landing_burn_start() ) {
 
-				mass = mass_ascent_end;
+			// ascent / descent coast
+			if ( timing::get_MET() >= 3400000 && !timing::get_t_landing_burn_start() ) {
+
+				mass = mass_descent_start;
 
 			} 
 			
 			// landing
-			else if ( timing::get_MET() > timing::get_t_landing_burn_start() && timing::get_t_landing_burn_start() ) {
+			if ( time_us_64() > timing::get_t_landing_burn_start() && timing::get_t_landing_burn_start() ) {
 
-				float percent_burn_remaining = (float)((timing::get_t_landing_burn_start()+3400000)-timing::get_MET())/(float)(3400000);
+				float percent_burn_remaining = (float)((timing::get_t_landing_burn_start()+3400000)-time_us_64())/(float)(3400000);
 				mass = clamp((mass_descent_start*percent_burn_remaining) + (mass_descent_end*(1-percent_burn_remaining)), mass_descent_end, mass_descent_start);
 
 			} 
 			
 			// post-landing
-			else if ( timing::get_MET() > timing::get_t_landing_burn_start()+3400000 && timing::get_t_landing_burn_start() ) {
+			if ( time_us_64() > timing::get_t_landing_burn_start()+3400000 && timing::get_t_landing_burn_start() ) {
 
 				mass = mass_descent_end;
 
@@ -227,7 +229,7 @@ namespace nav {
 			// altitude_asl = ( 1.f - fast_pow(pressure/101325.f) ) * 44330.f;
 			altitude_asl = ( 1.f - powf(pressure/101325.f, 1/5.255) ) * 44330.f;
 
-			if ( !flags::nav_flags::baro_debiased && altitude_asl < 500.f) {
+			if ( !flags::nav_flags::baro_debiased && altitude_asl < 500.f ) {
 
 				pad_altitude += altitude_asl;
 				nav_timing::baro_bias_count++;
@@ -240,7 +242,11 @@ namespace nav {
 			} else {
 
 				altitude = altitude_asl - pad_altitude;
-				if ( get_vehicle_state() == state_nav_init && altitude > 0.25 ) { flags::nav_flags::baro_debiased = false; nav_timing::baro_bias_count = 0; }
+				if ( get_vehicle_state() == state_nav_init && abs(altitude) > 0.25 ) { 
+					flags::nav_flags::baro_debiased = false; 
+					nav_timing::baro_bias_count = 0; 
+					pad_altitude = 0.0;
+				}
 
 				kalman_x.update_position(altitude);
 
@@ -310,7 +316,7 @@ namespace nav {
 		}
 
 		#else
-		if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_idle || get_vehicle_state() == state_launch_detect ) {			
+		if ( get_vehicle_state() == state_nav_init || get_vehicle_state() == state_launch_detect ) {			
 			kalman_y.update_posvel(0, 0);
 			kalman_z.update_posvel(0, 0);
 		}
@@ -428,10 +434,44 @@ namespace nav {
 
 			raw::accel = raw::fifo_accel[i];
 			acceleration_l = (vec3<float>)raw::accel * 0.009765625f;
+
+			#ifdef ACCEL_DEBIAS_ON_PAD
+
+			if ( flags::nav_flags::accel_debiased ) {
+				acceleration_l -= acceleration_b;
+			}
+
+			#endif
+
 			acceleration_i = rotation.rotate_vec(acceleration_l);
 			acceleration_i -= gravity;
 
-			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle ) {
+			#ifdef ACCEL_DEBIAS_ON_PAD
+
+			if ( get_vehicle_state() == state_nav_init && !flags::nav_flags::accel_debiased ) {
+				float accel_len = acceleration_l.len(); 
+				
+				if ( accel_len > 9.2 && accel_len < 10.4 ) {
+
+					acceleration_b += acceleration_l-vec3<float>(9.816, 0.0, 0.0);
+					nav::nav_timing::accel_bias_count++;
+
+					if ( nav::nav_timing::accel_bias_count >= 200 ) { 
+						flags::nav_flags::accel_debiased = true; 
+						acceleration_b /= 200.0f; 
+					}
+
+				}
+			}
+
+			#else
+			flags::nav_flags::accel_debiased = true;
+			#endif
+
+
+			if ( get_vehicle_state() != state_boot && get_vehicle_state() != state_idle && flags::nav_flags::accel_debiased ) {
+
+				#ifndef ACCEL_DEBIAS_ON_PAD
 
 				kalman_x.predict(acceleration_i.x, accel_read_dt);
 				kalman_y.predict(acceleration_i.y, accel_read_dt);
@@ -444,6 +484,24 @@ namespace nav {
 				kalman_x.get_covariances(covariance_position.x, covariance_velocity.x, covariance_acceleration.x);
 				kalman_y.get_covariances(covariance_position.y, covariance_velocity.y, covariance_acceleration.y);
 				kalman_z.get_covariances(covariance_position.z, covariance_velocity.z, covariance_acceleration.z);
+
+				#else
+
+				kalman_x.predict(acceleration_i.x, accel_read_dt);
+				kalman_y.predict(acceleration_i.y, accel_read_dt);
+				kalman_z.predict(acceleration_i.z, accel_read_dt);
+
+				vec3<float> tmp;
+
+				kalman_x.get_states(position.x, velocity.x, tmp.x);
+				kalman_y.get_states(position.y, velocity.y, tmp.y);
+				kalman_z.get_states(position.z, velocity.z, tmp.z);
+
+				kalman_x.get_covariances(covariance_position.x, covariance_velocity.x, covariance_acceleration.x);
+				kalman_y.get_covariances(covariance_position.y, covariance_velocity.y, covariance_acceleration.y);
+				kalman_z.get_covariances(covariance_position.z, covariance_velocity.z, covariance_acceleration.z);
+
+				#endif
 
 			}
 
@@ -478,14 +536,15 @@ namespace nav {
 			current_motor_thrust += simulation::f15_thrust[idx];
 		}
 		
-		vec3<float> tvc_angle = vec3<float>(0.0, perif::servo_2_position + ((time_us_32()&0xf0)>>4) - 8, perif::servo_1_position + (time_us_32()&0xf) - 8);
+		vec3<float> tvc_angle = vec3<float>(0.0, perif::servo_2_position , perif::servo_1_position);
 		tvc_angle.y -= perif::servo_2_offset + perif::servo_neutral;
 		tvc_angle.z -= perif::servo_1_offset + perif::servo_neutral;
-		tvc_angle /= 37.5f;
-
-		vec3<float> motor_forces = quat<float>().from_eulers(0.0, tvc_angle.z*PI/180.f, tvc_angle.y*PI/180.f).rotate_vec(vec3<float>(current_motor_thrust, 0.0, 0.0));
+		tvc_angle.y /= 37.54f;
+		tvc_angle.z /= 34.81f;
+		
+		vec3<float> motor_forces = quat<float>().from_eulers(0.0, tvc_angle.y*PI/180.f, tvc_angle.z*PI/180.f).rotate_vec(vec3<float>(current_motor_thrust, 0.0, 0.0));
 		vec3<float> motor_torques = vec3<float>(-0.2, 0.0, 0.0).cross(motor_forces);
-		rotational_acceleration = motor_torques/nav::moment_of_inertia;
+		rotational_acceleration = rotation.rotate_vec(motor_torques)/nav::moment_of_inertia;
 		
 		acceleration_i = vec3<float>(0.0, 0.0, 0.0);
 		acceleration_l = vec3<float>(0.0, 0.0, 0.0);
@@ -569,6 +628,8 @@ namespace nav {
 
 		flags::state_flags::baro_below_alt_threshold = position.x < 0.25;
 		flags::state_flags::velocity_below_landed_threshold = (velocity.x > -0.1) && (velocity.x < 0.1);
+
+		if ( position.x > 15.f ) { flags::control_flags::vehicle_within_burn_alt_lockouts = true; }
 
 		raw::fifo_gyro_pos = 0;
 		raw::fifo_accel_pos = 0;		

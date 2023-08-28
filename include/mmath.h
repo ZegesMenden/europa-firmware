@@ -19,8 +19,8 @@ public:
 	matrix() = default;
 
 	// element access and assignment
-	mem_t  operator()(int row, int col = 0) const { return(mem[(row * Cols + col)%memsize]); }
-	mem_t &operator()(int row, int col = 0)       { return(mem[(row * Cols + col)%memsize]); }
+	mem_t  operator()(int row, int col = 0) const { return(mem[(row * Cols + col)]); }
+	mem_t &operator()(int row, int col = 0)       { return(mem[(row * Cols + col)]); }
 
 	bool swap_row(int src, int dest) {
 		if ( src < 0 || dest < 0 || src > Rows || dest > Rows ) { return false; } 

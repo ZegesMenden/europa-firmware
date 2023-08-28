@@ -66,6 +66,8 @@ int main(void)
 		.h_acc = &nav::gps_horizontal_accuracy,
 		.n_sats = &nav::gps_n_sats,
 
+		.mass = &nav::mass,
+
 		.thrust = &control::thrust,
 
 		.target_vector = &control::target_vector,
@@ -79,6 +81,8 @@ int main(void)
 		.throttle_ratio			 = &control::gfield::throttle_ratio,
 		.divert_angle			 = &control::gfield::divert_angle,
 
+		.t_landing_burn_start = &timing::T_landing_burn_start,
+		
 		.simulation_energy_est   = &control::simulation_energy_est,
 		.simulation_work_est     = &control::simulation_work_est,
 		.simulation_position_est = &control::simulation_position_est,

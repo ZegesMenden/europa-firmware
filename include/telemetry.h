@@ -58,6 +58,16 @@ namespace telemetry {
 				#endif
 				break;
 			}
+			case('f'): {
+				#ifndef SITL
+				if ( !vehicle_is_in_flight() && (vehicle_state != state_launch_detect) ) {
+					datalog::erase_all_flights = true;
+				}
+				#else
+				datalog::erase_all_flights = true;
+				#endif
+				break;
+			}
 			default: {
 				break;
 			}
@@ -80,13 +90,15 @@ namespace telemetry {
 
 			#if true
 
+			vec3<float> rotation_euler = nav::rotation.euler_angles();
+
 			#ifdef USE_RADIO
 				radio::radio_tx_buf_position = sprintf((radio::radio_tx_buf+radio::radio_tx_buf_position), "%llu,%i,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%i,%f,%f,%f,%i\n",
 						timing::RUNTIME,
 						get_vehicle_state(),
-						0.0f,
-						control::angle_error.y,
-						control::angle_error.z,
+						rotation_euler.x,
+						rotation_euler.y,
+						rotation_euler.z,
 						nav::rotational_velocity.x,
 						nav::rotational_velocity.y,
 						nav::rotational_velocity.z,
@@ -111,9 +123,9 @@ namespace telemetry {
 				printf("%llu,%i,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%i,%f,%f,%f,%i\n",
 						timing::RUNTIME,
 						get_vehicle_state(),
-						0.0f,
-						control::angle_error.y,
-						control::angle_error.z,
+						rotation_euler.x,
+						rotation_euler.y,
+						rotation_euler.z,
 						nav::rotational_velocity.x,
 						nav::rotational_velocity.y,
 						nav::rotational_velocity.z,

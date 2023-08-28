@@ -54,6 +54,8 @@ namespace datalog {
 		float h_acc;
 		uint8_t n_sats;
 		
+		float mass;
+
 		float thrust;
 
 		vec3<float> target_vector;
@@ -68,6 +70,8 @@ namespace datalog {
 		float throttle_ratio;
 		float divert_angle;
 
+		uint64_t t_landing_burn_start;
+
 		float simulation_energy_est;
 		float simulation_work_est;
 		float simulation_position_est;
@@ -75,7 +79,7 @@ namespace datalog {
 		float simulation_time_est;
 		uint32_t simulation_time_taken;
 
-		uint8_t extra[28];
+		uint8_t extra[16];
 
 	} points;
 
@@ -121,6 +125,8 @@ namespace datalog {
 			float* h_acc;
 			uint8_t* n_sats;
 
+			float *mass;
+
 			float *thrust;
 
 			vec3<float> *target_vector;
@@ -135,6 +141,8 @@ namespace datalog {
 			float* throttle_ratio;
 			float* divert_angle;
 
+			uint64_t *t_landing_burn_start;
+
 			float* simulation_energy_est;
 			float* simulation_work_est;
 			float* simulation_position_est;
@@ -144,7 +152,7 @@ namespace datalog {
 
 		} points;
 
-		void *raw[44] = {NULL};
+		void *raw[46] = {NULL};
 
 		static_assert(sizeof(points) == sizeof(raw));
 	} ptrs;
@@ -161,6 +169,7 @@ namespace datalog {
 
 	bool export_current_flight = false;
 	bool export_past_flights = false;
+	bool erase_all_flights = false;
 	
 	uint16_t find_flash_start() {
 
@@ -283,6 +292,8 @@ namespace datalog {
 		points.h_acc					= *ptrs.points.h_acc;
 		points.n_sats					= *ptrs.points.n_sats;
 
+		points.mass 					= *ptrs.points.mass;
+
 		points.thrust 					= *ptrs.points.thrust;
 
 		points.target_vector        	= *ptrs.points.target_vector;
@@ -296,6 +307,8 @@ namespace datalog {
 		points.desired_accel			= *ptrs.points.desired_accel;
 		points.throttle_ratio			= *ptrs.points.throttle_ratio;
 		points.divert_angle				= *ptrs.points.divert_angle;
+
+		points.t_landing_burn_start 	= *ptrs.points.t_landing_burn_start;
 
 		points.simulation_energy_est	= *ptrs.points.simulation_energy_est;
 		points.simulation_work_est     	= *ptrs.points.simulation_work_est;
@@ -377,22 +390,30 @@ namespace datalog {
 
 			quat<float> rotation = points.rotation;
 			vec3<float> target_vec = points.target_vector;
-
 			vec3<float> rotation_euler = rotation.euler_angles() * 180.0f/PI;
+			
+			#ifndef ACCEL_DEBIAS_ON_PAD
 			vec3<float> accel_l = vec3<float>(points.acceleration.x, points.acceleration.y, points.acceleration.z) * 0.009765625f;
 			vec3<float> accel_i = rotation.rotate_vec(accel_l);
 			vec3<float> accel_i_debiased = accel_i - points.accel_bias;
 			vec3<float> accel_l_debiased = rotation.conjugate().rotate_vec(accel_i_debiased);
+			#else
+			vec3<float> accel_l = vec3<float>(points.acceleration.x, points.acceleration.y, points.acceleration.z) * 0.009765625f;
+			vec3<float> accel_i = rotation.rotate_vec(accel_l)-vec3<float>(9.816, 0.0, 0.0);
+			vec3<float> accel_i_debiased = accel_i - rotation.rotate_vec(points.accel_bias);
+			vec3<float> accel_l_debiased = accel_l - points.accel_bias;
+			#endif
+
 			vec3<float> angle_error;
 			vec3<float> target_vector_;
 			target_vector_ = rotation.conjugate().rotate_vec(target_vec.norm());
 			angle_error.y = atan2f(-target_vector_.z, target_vector_.x) * 180.0/PI;
-			angle_error.z = atan2f(target_vector_.y, target_vector_.x) * 180.0/PI;
+			angle_error.z = atan2f( target_vector_.y, target_vector_.x) * 180.0/PI;
 
 			vec3<float> vector_heading = rotation.conjugate().rotate_vec(vec3<float>(1.0, 0.0, 0.0));
 			vec3<float> vector_angle;
 			vector_angle.y = atan2f(-vector_heading.z, vector_heading.x) * 180.0/PI;
-			vector_angle.z = atan2f(vector_heading.y, vector_heading.x) * 180.0/PI;
+			vector_angle.z = atan2f( vector_heading.y, vector_heading.x) * 180.0/PI;
 
 			printf("$");
 
@@ -453,6 +474,8 @@ namespace datalog {
 			printf("%f,",   ((float)points.voltage_batt)/484.07f);
 			printf("%f,",   ((float)points.voltage_pyro)/484.07f);
 
+			printf("%f,", 	points.mass);
+
 			printf("%f,",   points.position.x);
 			printf("%f,",   points.position.y);
 			printf("%f,",   points.position.z);
@@ -507,7 +530,7 @@ namespace datalog {
 			printf("%f,",	points.target_vector.z);
 
 			printf("%f,", 	atan2f(-points.target_vector.z, points.target_vector.x) * 180.0/PI);
-			printf("%f,", 	atan2f(points.target_vector.y, points.target_vector.x) * 180.0/PI);
+			printf("%f,", 	atan2f( points.target_vector.y, points.target_vector.x) * 180.0/PI);
 
 			printf("%f,", 	vector_angle.y);
 			printf("%f,", 	vector_angle.z);
@@ -537,7 +560,9 @@ namespace datalog {
 			printf("%f,",   points.comp);
 			printf("%f,", 	points.desired_accel);
 			printf("%f,", 	points.throttle_ratio);
-			printf("%f,", 	points.divert_angle);
+			printf("%f,", 	points.divert_angle*180.f/PI);
+
+			printf("%f,", 	points.t_landing_burn_start);
 			
 			printf("%f,",   points.simulation_energy_est);
 			printf("%f,",   points.simulation_work_est);
@@ -563,6 +588,12 @@ namespace datalog {
 			// export_flash_data_async();
 			export_flash_data_blocking(0, start_page);
 			export_past_flights = false;
+		}
+
+		if ( erase_all_flights && !vehicle_is_in_flight() ) {
+			flash_erase_chip(pin_cs_flash);
+			find_flash_start();
+			erase_all_flights = false;
 		}
 
 		switch(get_vehicle_state()) {
